@@ -124,6 +124,7 @@ type LegacyItem = {
   date?: string
   assignee?: string
   colour?: string
+  icon?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -356,6 +357,7 @@ export const usePlannerStore = create<PlannerStore>()(
             notes: input.notes,
             date: input.date,
             assignee: input.assignee,
+            icon: input.icon,
             createdAt: existing?.createdAt ?? now,
             updatedAt: now,
           }
@@ -440,6 +442,7 @@ export const usePlannerStore = create<PlannerStore>()(
                 notes: raw.notes,
                 date: raw.date ?? formatISODate(new Date()),
                 assignee: raw.assignee,
+                icon: typeof raw.icon === 'string' ? raw.icon : undefined,
                 createdAt,
                 updatedAt,
               })

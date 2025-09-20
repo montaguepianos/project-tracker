@@ -188,6 +188,7 @@ function ProjectsPopover({
   const [open, setOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createColour, setCreateColour] = useState('#1C7ED6')
+  const [createColourDirty, setCreateColourDirty] = useState(false)
   const [createError, setCreateError] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
@@ -195,18 +196,17 @@ function ProjectsPopover({
   const [editError, setEditError] = useState('')
 
   useEffect(() => {
-    if (!createName) {
-      setCreateColour('#1C7ED6')
-      return
-    }
-    setCreateColour(deriveColour(createName))
-  }, [createName])
+    if (createColourDirty) return
+    const derived = createName ? deriveColour(createName) : '#1C7ED6'
+    setCreateColour(derived)
+  }, [createColourDirty, createName])
 
   useEffect(() => {
     if (!open) {
       setEditingId(null)
       setEditError('')
       setCreateError('')
+      setCreateColourDirty(false)
     }
   }, [open])
 
@@ -238,6 +238,7 @@ function ProjectsPopover({
 
     setCreateName('')
     setCreateColour('#1C7ED6')
+    setCreateColourDirty(false)
     setCreateError('')
   }
 

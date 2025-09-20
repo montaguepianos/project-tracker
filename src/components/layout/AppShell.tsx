@@ -3,6 +3,7 @@ import { Eye, LayoutGrid, Rows3 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { FiltersBar } from '@/components/FiltersBar'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { usePlannerStore } from '@/store/plannerStore'
 import type { PlannerView } from '@/types'
 import { formatDate, MONTH_LABEL_FORMAT } from '@/lib/date'
@@ -55,7 +56,8 @@ export function AppShell({ children, onAddItem }: AppShellProps) {
                   </Button>
                 )
               })}
-              <Button onClick={onAddItem} className="ml-2">Add item</Button>
+              <Button onClick={onAddItem}>Add item</Button>
+              <ThemeToggle />
             </div>
           </div>
           <FiltersBar />

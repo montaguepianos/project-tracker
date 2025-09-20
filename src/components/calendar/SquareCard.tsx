@@ -1,21 +1,25 @@
 import { memo } from 'react'
 
 import { ensureReadableText } from '@/lib/colour'
+import { getPlannerIconComponent } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 import type { PlannerItem, Project } from '@/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 
 type SquareCardProps = {
   item: PlannerItem
   project: Project | null
   isSelected: boolean
   onOpen: (id: string) => void
+  size: number
 }
 
-const SquareCardBase = ({ item, project, isSelected, onOpen }: SquareCardProps) => {
+const SquareCardBase = ({ item, project, isSelected, onOpen, size }: SquareCardProps) => {
   const background = project?.colour ?? '#888888'
   const textColour = ensureReadableText(background)
   const projectName = project?.name ?? 'Project'
+  const Icon = getPlannerIconComponent(item.icon)
+  const iconSize = Math.max(10, Math.min(22, size * 0.6))
 
   return (
     <Tooltip>
@@ -23,14 +27,20 @@ const SquareCardBase = ({ item, project, isSelected, onOpen }: SquareCardProps) 
         <button
           type="button"
           className={cn(
-            'relative aspect-square w-full rounded-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'relative flex items-center justify-center rounded-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             isSelected && 'ring-2 ring-offset-2 ring-primary ring-offset-background',
           )}
-          style={{ backgroundColor: background, color: textColour }}
+          style={{
+            backgroundColor: background,
+            color: textColour,
+            width: `${size}px`,
+            height: `${size}px`,
+          }}
           aria-label={`${projectName}: ${item.title}`}
           onClick={() => onOpen(item.id)}
         >
           <span className="sr-only">{item.title}</span>
+          {Icon && <Icon className="pointer-events-none" size={iconSize} />}
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">

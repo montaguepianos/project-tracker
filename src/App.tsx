@@ -4,6 +4,7 @@ import { addDays, parseISO } from 'date-fns'
 import { AppShell } from '@/components/layout/AppShell'
 import { EditDrawer } from '@/components/EditDrawer'
 import { useUrlSync } from '@/hooks/useUrlSync'
+import { useThemeStore } from '@/store/themeStore'
 import { usePlannerStore } from '@/store/plannerStore'
 import { MonthView } from '@/views/MonthView'
 import { formatISODate } from '@/lib/string'
@@ -21,6 +22,7 @@ export default function App() {
   const [drawerState, setDrawerState] = useState<{ open: boolean; itemId?: string | null; date?: string }>({
     open: false,
   })
+  const initTheme = useThemeStore((state) => state.initTheme)
 
   const view = usePlannerStore((state) => state.view)
   const focusedDate = usePlannerStore((state) => state.focusedDate)
@@ -32,6 +34,10 @@ export default function App() {
   const items = usePlannerStore((state) => state.items)
 
   const focused = useMemo(() => parseISO(focusedDate), [focusedDate])
+
+  useEffect(() => {
+    initTheme()
+  }, [initTheme])
 
   const moveFocus = useCallback(
     (delta: number) => {

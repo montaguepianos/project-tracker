@@ -12,8 +12,12 @@ import { getFilteredItems, groupItemsByDate } from '@/store/selectors'
 import { getMonthMatrix } from '@/lib/date'
 import { formatISODate } from '@/lib/string'
 import type { PlannerItem, Project } from '@/types'
+import { useResizeObserver } from '@/hooks/useResizeObserver'
 
-const MAX_VISIBLE = 6
+const MIN_CARD_SIZE = 14
+const GAP_LARGE = 6
+const GAP_MEDIUM = 4
+const GAP_SMALL = 2
 
 export type MonthViewProps = {
   selectedItemId: string | null
@@ -55,8 +59,6 @@ export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthVie
             {week.map((day) => {
               const iso = formatISODate(day)
               const dayItems = grouped[iso] ?? []
-              const visible = dayItems.slice(0, MAX_VISIBLE)
-              const overflowItems = dayItems.slice(visible.length)
               const isCurrentMonth = isSameMonth(day, parsedReference)
               const isFocused = iso === focusedDate
 
@@ -64,8 +66,7 @@ export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthVie
                 <DayCell
                   key={iso}
                   displayDate={day}
-                  items={visible}
-                  overflowItems={overflowItems}
+                  items={dayItems}
                   isCurrentMonth={isCurrentMonth}
                   isFocused={isFocused}
                   isToday={isToday(day)}
@@ -86,7 +87,6 @@ export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthVie
 type DayCellProps = {
   displayDate: Date
   items: PlannerItem[]
-  overflowItems: PlannerItem[]
   isCurrentMonth: boolean
   isFocused: boolean
   isToday: boolean
@@ -99,7 +99,6 @@ type DayCellProps = {
 function DayCell({
   displayDate,
   items,
-  overflowItems,
   isCurrentMonth,
   isFocused,
   isToday,
@@ -108,6 +107,11 @@ function DayCell({
   onOpenItem,
   projectMap,
 }: DayCellProps) {
+  const { ref, width, height } = useResizeObserver<HTMLDivElement>()
+  const layout = useMemo(() => computePacking(width, height, items.length), [width, height, items.length])
+  const visibleItems = layout.visibleCount ? items.slice(0, layout.visibleCount) : []
+  const overflowItems = layout.visibleCount < items.length ? items.slice(layout.visibleCount) : []
+
   return (
     <div
       role="gridcell"
@@ -124,14 +128,23 @@ function DayCell({
         <span className={isCurrentMonth ? 'font-medium' : 'text-muted-foreground'}>{displayDate.getDate()}</span>
         {isToday && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] text-primary-foreground">Today</span>}
       </div>
-      <div className="grid flex-1 grid-cols-3 gap-1">
-        {items.map((item) => (
+      <div
+        ref={ref}
+        className="grid flex-1 content-start justify-center"
+        style={{
+          gap: `${layout.gap}px`,
+          gridTemplateColumns: layout.columns ? `repeat(${layout.columns}, ${layout.squareSize}px)` : undefined,
+          gridAutoRows: layout.squareSize ? `${layout.squareSize}px` : undefined,
+        }}
+      >
+        {visibleItems.map((item) => (
           <SquareCard
             key={item.id}
             item={item}
             project={projectMap.get(item.projectId) ?? null}
             isSelected={selectedItemId === item.id}
             onOpen={onOpenItem}
+            size={layout.squareSize}
           />
         ))}
         {overflowItems.length > 0 && (
@@ -140,6 +153,7 @@ function DayCell({
             selectedItemId={selectedItemId}
             onOpen={onOpenItem}
             projectMap={projectMap}
+            size={layout.squareSize}
           />
         )}
       </div>
@@ -152,15 +166,18 @@ type OverflowBadgeProps = {
   selectedItemId: string | null
   onOpen: (id: string) => void
   projectMap: Map<string, Project>
+  size: number
 }
 
-function OverflowBadge({ items, selectedItemId, onOpen, projectMap }: OverflowBadgeProps) {
+function OverflowBadge({ items, selectedItemId, onOpen, projectMap, size }: OverflowBadgeProps) {
+  const style = size > 0 ? { width: `${size}px`, height: `${size}px` } : undefined
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex h-full flex-col items-center justify-center rounded-sm border border-dashed text-xs text-muted-foreground"
+          className="flex flex-col items-center justify-center rounded-sm border border-dashed text-xs text-muted-foreground"
+          style={style}
           aria-label={`View ${items.length} more item(s)`}
         >
           <Badge variant="secondary">+{items.length}</Badge>
@@ -189,4 +206,61 @@ function OverflowBadge({ items, selectedItemId, onOpen, projectMap }: OverflowBa
       </PopoverContent>
     </Popover>
   )
+}
+
+type PackingResult = {
+  squareSize: number
+  gap: number
+  columns: number
+  rows: number
+  visibleCount: number
+}
+
+function computePacking(width: number, height: number, count: number): PackingResult {
+  if (!count || width <= 0 || height <= 0) {
+    return { squareSize: 0, gap: GAP_LARGE, columns: 0, rows: 0, visibleCount: 0 }
+  }
+
+  let best: PackingResult | null = null
+  const maxColumns = Math.max(1, Math.floor((width + GAP_SMALL) / (MIN_CARD_SIZE + GAP_SMALL)))
+  const maxRows = Math.max(1, Math.floor((height + GAP_SMALL) / (MIN_CARD_SIZE + GAP_SMALL)))
+
+  for (let columns = 1; columns <= Math.min(count, maxColumns); columns++) {
+    const rows = Math.ceil(count / columns)
+    if (rows > maxRows) continue
+
+    const gapCandidates = [GAP_LARGE, GAP_MEDIUM, GAP_SMALL]
+    for (const gap of gapCandidates) {
+      const size = availableSquare(width, height, columns, rows, gap)
+      const candidate: PackingResult = { squareSize: size, gap, columns, rows, visibleCount: count }
+      if (!best || size > best.squareSize) {
+        best = candidate
+      }
+    }
+  }
+
+  if (best && best.squareSize >= MIN_CARD_SIZE) {
+    return best
+  }
+
+  const fallbackGap = GAP_SMALL
+  const columns = Math.max(1, Math.floor((width + fallbackGap) / (MIN_CARD_SIZE + fallbackGap)))
+  const rows = Math.max(1, Math.floor((height + fallbackGap) / (MIN_CARD_SIZE + fallbackGap)))
+  const visibleCapacity = Math.max(1, columns * rows)
+  const visibleCount = Math.min(count, visibleCapacity)
+  const size = availableSquare(width, height, columns, rows, fallbackGap)
+
+  return {
+    squareSize: Math.max(MIN_CARD_SIZE, size),
+    gap: fallbackGap,
+    columns,
+    rows,
+    visibleCount,
+  }
+}
+
+function availableSquare(width: number, height: number, columns: number, rows: number, gap: number) {
+  const widthAvailable = width - gap * (columns - 1)
+  const heightAvailable = height - gap * (rows - 1)
+  return Math.max(0, Math.min(widthAvailable / columns, heightAvailable / rows))
 }

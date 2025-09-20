@@ -1,5 +1,6 @@
 import { compareAsc, isWithinInterval, parseISO } from 'date-fns'
 
+import { PLANNER_ICONS } from '@/lib/icons'
 import type { PlannerItem, Project } from '@/types'
 import type { Filters } from './plannerStore'
 
@@ -17,7 +18,10 @@ export function getFilteredItems(items: PlannerItem[], filters: Filters, project
       if (filters.search) {
         const safeTerm = filters.search.toLowerCase()
         const projectName = projectMap.get(item.projectId)?.name ?? ''
-        const haystack = `${item.title} ${item.notes ?? ''} ${projectName} ${item.assignee ?? ''}`.toLowerCase()
+        const iconLabel = item.icon
+          ? PLANNER_ICONS.find((entry) => entry.value === item.icon)?.label ?? item.icon
+          : ''
+        const haystack = `${item.title} ${item.notes ?? ''} ${projectName} ${item.assignee ?? ''} ${iconLabel}`.toLowerCase()
         if (!haystack.includes(safeTerm)) {
           return false
         }

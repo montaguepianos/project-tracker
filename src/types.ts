@@ -13,6 +13,7 @@ export type PlannerItem = {
   notes?: string
   date: string
   assignee?: string
+  icon?: string
   createdAt: string
   updatedAt: string
 }

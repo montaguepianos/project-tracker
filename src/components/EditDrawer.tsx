@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/com
 import { Textarea } from '@/components/ui/textarea'
 import { usePlannerStore } from '@/store/plannerStore'
 import { deriveColour, ensureReadableText } from '@/lib/colour'
+import { PLANNER_ICONS, getPlannerIconComponent } from '@/lib/icons'
 import { formatISODate, normaliseTitle } from '@/lib/string'
 
 export type EditDrawerProps = {
@@ -23,6 +24,7 @@ type Draft = {
   notes: string
   date: string
   assignee: string
+  icon: string | null
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -31,6 +33,7 @@ const EMPTY_DRAFT: Draft = {
   notes: '',
   date: formatISODate(new Date()),
   assignee: '',
+  icon: null,
 }
 
 export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
@@ -48,6 +51,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   const [isCreatingProject, setCreatingProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectColour, setNewProjectColour] = useState('#1C7ED6')
+  const [newProjectColourDirty, setNewProjectColourDirty] = useState(false)
   const [projectError, setProjectError] = useState('')
 
   useEffect(() => {
@@ -58,6 +62,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
         notes: currentItem.notes ?? '',
         date: currentItem.date,
         assignee: currentItem.assignee ?? '',
+        icon: currentItem.icon ?? null,
       })
       setCreatingProject(false)
       setProjectError('')
@@ -69,6 +74,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
         notes: '',
         date: date ?? prev.date,
         assignee: '',
+        icon: null,
       }))
       setCreatingProject(false)
       setProjectError('')
@@ -77,16 +83,15 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
 
   useEffect(() => {
     if (!isCreatingProject) return
-    if (!newProjectName) {
-      setNewProjectColour('#1C7ED6')
-      return
-    }
-    setNewProjectColour(deriveColour(newProjectName))
-  }, [isCreatingProject, newProjectName])
+    if (newProjectColourDirty) return
+    const derived = newProjectName ? deriveColour(newProjectName) : '#1C7ED6'
+    setNewProjectColour(derived)
+  }, [isCreatingProject, newProjectColourDirty, newProjectName])
 
   const selectedProject = projects.find((project) => project.id === draft.projectId) ?? null
   const previewColour = selectedProject?.colour ?? '#888888'
   const previewText = ensureReadableText(previewColour)
+  const IconPreview = getPlannerIconComponent(draft.icon ?? undefined)
 
   const handleSubmit = () => {
     if (!draft.projectId) {
@@ -107,6 +112,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
       notes: draft.notes.trim() || undefined,
       date: draft.date,
       assignee: draft.assignee.trim() || undefined,
+      icon: draft.icon ?? undefined,
     })
 
     onClose()
@@ -120,10 +126,21 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
     onClose()
   }
 
+  const resetNewProjectFields = () => {
+    setCreatingProject(false)
+    setNewProjectName('')
+    setNewProjectColour('#1C7ED6')
+    setNewProjectColourDirty(false)
+    setProjectError('')
+  }
+
   const handleProjectSelect = (value: string) => {
     if (value === '__create__') {
       setCreatingProject(true)
       setProjectError('')
+      setNewProjectColourDirty(false)
+      const fallbackName = newProjectName || 'New project'
+      setNewProjectColour(deriveColour(fallbackName))
       return
     }
 
@@ -146,10 +163,10 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
 
     const projectId = addProject({ name: trimmed, colour: newProjectColour })
     setDraft((prev) => ({ ...prev, projectId }))
-    setCreatingProject(false)
-    setNewProjectName('')
-    setProjectError('')
+    resetNewProjectFields()
   }
+
+  const iconDefinition = draft.icon ? PLANNER_ICONS.find((entry) => entry.value === draft.icon) : null
 
   return (
     <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
@@ -190,6 +207,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
                 onChange={(event) => {
                   setNewProjectName(event.target.value)
                   setProjectError('')
+                  setNewProjectColourDirty(false)
                 }}
                 placeholder="Project name"
               />
@@ -201,7 +219,10 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
                   id="drawer-new-project-colour"
                   type="color"
                   value={newProjectColour}
-                  onChange={(event) => setNewProjectColour(event.target.value)}
+                  onChange={(event) => {
+                    setNewProjectColour(event.target.value)
+                    setNewProjectColourDirty(true)
+                  }}
                   className="h-9 w-16"
                 />
               </div>
@@ -209,7 +230,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
                 <Button type="button" size="sm" onClick={handleCreateProject}>
                   Save project
                 </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setCreatingProject(false)}>
+                <Button type="button" size="sm" variant="ghost" onClick={resetNewProjectFields}>
                   Cancel
                 </Button>
               </div>
@@ -234,6 +255,29 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
               onChange={(event) => setDraft((prev) => ({ ...prev, notes: event.target.value }))}
               placeholder="Key details"
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="icon">Icon</Label>
+            <Select value={draft.icon ?? 'none'} onValueChange={(value) => setDraft((prev) => ({ ...prev, icon: value === 'none' ? null : value }))}>
+              <SelectTrigger id="icon" className="flex items-center gap-2">
+                {iconDefinition && <iconDefinition.icon className="h-4 w-4" />}
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {PLANNER_ICONS.map((entry) => {
+                  const IconComponent = entry.icon
+                  return (
+                    <SelectItem key={entry.value} value={entry.value}>
+                      <span className="flex items-center gap-2">
+                        <IconComponent className="h-4 w-4" />
+                        {entry.label}
+                      </span>
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex gap-4">
             <div className="flex-1 space-y-2">
@@ -260,10 +304,11 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
             <Label>Colour</Label>
             <div className="flex items-center gap-3">
               <div
-                className="flex h-10 w-full items-center justify-center rounded-md border"
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-md border"
                 style={{ backgroundColor: previewColour, color: previewText }}
               >
-                {selectedProject ? selectedProject.name : 'Select a project'}
+                {IconPreview && <IconPreview className="h-4 w-4" size={16} />}
+                <span>{selectedProject ? selectedProject.name : 'Select a project'}</span>
               </div>
             </div>
           </div>

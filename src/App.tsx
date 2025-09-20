@@ -7,6 +7,8 @@ import { useUrlSync } from '@/hooks/useUrlSync'
 import { useThemeStore } from '@/store/themeStore'
 import { usePlannerStore } from '@/store/plannerStore'
 import { MonthView } from '@/views/MonthView'
+import { WeekView } from '@/views/WeekView'
+import { DayView } from '@/views/DayView'
 import { formatISODate } from '@/lib/string'
 
 function isEditableElement(target: EventTarget | null) {
@@ -58,29 +60,41 @@ export default function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableElement(event.target)) return
 
-      if (view === 'month') {
-        if (event.key === 'ArrowLeft') {
-          event.preventDefault()
-          moveFocus(-1)
-          return
-        }
+      const handleDirectional = (delta: number) => {
+        event.preventDefault()
+        moveFocus(delta)
+      }
 
-        if (event.key === 'ArrowRight') {
-          event.preventDefault()
-          moveFocus(1)
-          return
-        }
-
-        if (event.key === 'ArrowUp') {
-          event.preventDefault()
-          moveFocus(-7)
-          return
-        }
-
-        if (event.key === 'ArrowDown') {
-          event.preventDefault()
-          moveFocus(7)
-          return
+      if (view === 'month' || view === 'week' || view === 'day') {
+        switch (event.key) {
+          case 'ArrowLeft':
+            handleDirectional(-1)
+            return
+          case 'ArrowRight':
+            handleDirectional(1)
+            return
+          case 'ArrowUp':
+            if (view === 'month') {
+              handleDirectional(-7)
+            }
+            return
+          case 'ArrowDown':
+            if (view === 'month') {
+              handleDirectional(7)
+            }
+            return
+          case 'PageUp':
+            if (view !== 'day') {
+              handleDirectional(-7)
+            }
+            return
+          case 'PageDown':
+            if (view !== 'day') {
+              handleDirectional(7)
+            }
+            return
+          default:
+            break
         }
       }
 
@@ -120,9 +134,19 @@ export default function App() {
 
   const handleAdd = () => openDrawerForDate(focusedDate)
 
+  const handleDeleteItem = useCallback(
+    (id: string) => {
+      const confirmDelete = window.confirm('Delete the selected item?')
+      if (!confirmDelete) return
+      deleteItem(id)
+      setSelectedItemId((current) => (current === id ? null : current))
+    },
+    [deleteItem],
+  )
+
   return (
     <AppShell onAddItem={handleAdd}>
-      {view === 'month' ? (
+      {view === 'month' && (
         <MonthView
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
@@ -131,10 +155,27 @@ export default function App() {
             setDrawerState({ open: true, itemId: id })
           }}
         />
-      ) : (
-        <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-          {view === 'week' ? 'Week view coming soon' : 'Day view coming soon'}
-        </div>
+      )}
+      {view === 'week' && (
+        <WeekView
+          selectedItemId={selectedItemId}
+          onSelectItem={setSelectedItemId}
+          onEditItem={(id) => {
+            setSelectedItemId(id)
+            setDrawerState({ open: true, itemId: id })
+          }}
+        />
+      )}
+      {view === 'day' && (
+        <DayView
+          selectedItemId={selectedItemId}
+          onSelectItem={setSelectedItemId}
+          onEditItem={(id) => {
+            setSelectedItemId(id)
+            setDrawerState({ open: true, itemId: id })
+          }}
+          onDeleteItem={handleDeleteItem}
+        />
       )}
 
       {undo && (

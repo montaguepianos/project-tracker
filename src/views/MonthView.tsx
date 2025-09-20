@@ -1,9 +1,6 @@
 import { Fragment, useMemo } from 'react'
 import { isSameMonth, isToday, parseISO } from 'date-fns'
 
-import { Badge } from '@/components/ui/badge'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { SquareCard } from '@/components/calendar/SquareCard'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -13,11 +10,8 @@ import { getMonthMatrix } from '@/lib/date'
 import { formatISODate } from '@/lib/string'
 import type { PlannerItem, Project } from '@/types'
 import { useResizeObserver } from '@/hooks/useResizeObserver'
-
-const MIN_CARD_SIZE = 14
-const GAP_LARGE = 6
-const GAP_MEDIUM = 4
-const GAP_SMALL = 2
+import { computeSquarePacking } from '@/lib/packing'
+import { OverflowBadge } from '@/components/calendar/OverflowBadge'
 
 export type MonthViewProps = {
   selectedItemId: string | null
@@ -108,7 +102,7 @@ function DayCell({
   projectMap,
 }: DayCellProps) {
   const { ref, width, height } = useResizeObserver<HTMLDivElement>()
-  const layout = useMemo(() => computePacking(width, height, items.length), [width, height, items.length])
+  const layout = useMemo(() => computeSquarePacking(width, height, items.length), [width, height, items.length])
   const visibleItems = layout.visibleCount ? items.slice(0, layout.visibleCount) : []
   const overflowItems = layout.visibleCount < items.length ? items.slice(layout.visibleCount) : []
 
@@ -159,108 +153,4 @@ function DayCell({
       </div>
     </div>
   )
-}
-
-type OverflowBadgeProps = {
-  items: PlannerItem[]
-  selectedItemId: string | null
-  onOpen: (id: string) => void
-  projectMap: Map<string, Project>
-  size: number
-}
-
-function OverflowBadge({ items, selectedItemId, onOpen, projectMap, size }: OverflowBadgeProps) {
-  const style = size > 0 ? { width: `${size}px`, height: `${size}px` } : undefined
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex flex-col items-center justify-center rounded-sm border border-dashed text-xs text-muted-foreground"
-          style={style}
-          aria-label={`View ${items.length} more item(s)`}
-        >
-          <Badge variant="secondary">+{items.length}</Badge>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-0" align="end">
-        <ScrollArea className="max-h-64">
-          <ul className="divide-y">
-            {items.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className="flex w-full flex-col gap-1 p-3 text-left text-sm hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => onOpen(item.id)}
-                >
-                  <span className="font-medium">{item.title}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {projectMap.get(item.projectId)?.name ?? 'Project'}
-                  </span>
-                  {selectedItemId === item.id && <span className="text-[10px] uppercase tracking-wide text-primary">Selected</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </ScrollArea>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-type PackingResult = {
-  squareSize: number
-  gap: number
-  columns: number
-  rows: number
-  visibleCount: number
-}
-
-function computePacking(width: number, height: number, count: number): PackingResult {
-  if (!count || width <= 0 || height <= 0) {
-    return { squareSize: 0, gap: GAP_LARGE, columns: 0, rows: 0, visibleCount: 0 }
-  }
-
-  let best: PackingResult | null = null
-  const maxColumns = Math.max(1, Math.floor((width + GAP_SMALL) / (MIN_CARD_SIZE + GAP_SMALL)))
-  const maxRows = Math.max(1, Math.floor((height + GAP_SMALL) / (MIN_CARD_SIZE + GAP_SMALL)))
-
-  for (let columns = 1; columns <= Math.min(count, maxColumns); columns++) {
-    const rows = Math.ceil(count / columns)
-    if (rows > maxRows) continue
-
-    const gapCandidates = [GAP_LARGE, GAP_MEDIUM, GAP_SMALL]
-    for (const gap of gapCandidates) {
-      const size = availableSquare(width, height, columns, rows, gap)
-      const candidate: PackingResult = { squareSize: size, gap, columns, rows, visibleCount: count }
-      if (!best || size > best.squareSize) {
-        best = candidate
-      }
-    }
-  }
-
-  if (best && best.squareSize >= MIN_CARD_SIZE) {
-    return best
-  }
-
-  const fallbackGap = GAP_SMALL
-  const columns = Math.max(1, Math.floor((width + fallbackGap) / (MIN_CARD_SIZE + fallbackGap)))
-  const rows = Math.max(1, Math.floor((height + fallbackGap) / (MIN_CARD_SIZE + fallbackGap)))
-  const visibleCapacity = Math.max(1, columns * rows)
-  const visibleCount = Math.min(count, visibleCapacity)
-  const size = availableSquare(width, height, columns, rows, fallbackGap)
-
-  return {
-    squareSize: Math.max(MIN_CARD_SIZE, size),
-    gap: fallbackGap,
-    columns,
-    rows,
-    visibleCount,
-  }
-}
-
-function availableSquare(width: number, height: number, columns: number, rows: number, gap: number) {
-  const widthAvailable = width - gap * (columns - 1)
-  const heightAvailable = height - gap * (rows - 1)
-  return Math.max(0, Math.min(widthAvailable / columns, heightAvailable / rows))
 }

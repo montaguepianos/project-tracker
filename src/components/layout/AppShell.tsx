@@ -14,24 +14,28 @@ import { exportElementToPdf } from '@/lib/pdf'
 type AppShellProps = {
   children: ReactNode
   onAddItem: () => void
-  onStepMonth?: (delta: number) => void
-  canStepPrevMonth?: boolean
-  canStepNextMonth?: boolean
+  onStepHeading?: (delta: number) => void
+  canStepPrev?: boolean
+  canStepNext?: boolean
 }
 
 const VIEW_ICONS: Record<PlannerView, React.ComponentType<{ className?: string }>> = {
+  year: LayoutGrid,
   month: LayoutGrid,
   week: Rows3,
   day: Eye,
 }
 
 const VIEW_LABELS: Record<PlannerView, string> = {
+  year: 'Year',
   month: 'Month',
   week: 'Week',
   day: 'Day',
 }
 
-export function AppShell({ children, onAddItem, onStepMonth, canStepNextMonth = true, canStepPrevMonth = true }: AppShellProps) {
+const VIEW_ORDER: PlannerView[] = ['year', 'month', 'week', 'day']
+
+export function AppShell({ children, onAddItem, onStepHeading, canStepNext = true, canStepPrev = true }: AppShellProps) {
   const view = usePlannerStore((state) => state.view)
   const referenceDate = usePlannerStore((state) => state.referenceDate)
   const setView = usePlannerStore((state) => state.setView)
@@ -86,27 +90,27 @@ export function AppShell({ children, onAddItem, onStepMonth, canStepNextMonth = 
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Planning</p>
               <div className="flex items-center gap-2">
-                {view === 'month' && onStepMonth && (
+                {onStepHeading && (
                   <Button
                     type="button"
                     size="icon"
                     variant="outline"
-                    onClick={() => onStepMonth(-1)}
-                    disabled={!canStepPrevMonth}
-                    aria-label="Previous month"
+                    onClick={() => onStepHeading(-1)}
+                    disabled={!canStepPrev}
+                    aria-label={`Previous ${view}`}
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                 )}
                 <h1 className="text-lg font-semibold">{formatDate(referenceDate, MONTH_LABEL_FORMAT)}</h1>
-                {view === 'month' && onStepMonth && (
+                {onStepHeading && (
                   <Button
                     type="button"
                     size="icon"
                     variant="outline"
-                    onClick={() => onStepMonth(1)}
-                    disabled={!canStepNextMonth}
-                    aria-label="Next month"
+                    onClick={() => onStepHeading(1)}
+                    disabled={!canStepNext}
+                    aria-label={`Next ${view}`}
                   >
                     <ChevronRight className="h-4 w-4" />
                   </Button>
@@ -114,7 +118,7 @@ export function AppShell({ children, onAddItem, onStepMonth, canStepNextMonth = 
               </div>
             </div>
             <div className="flex items-center gap-2 print-hidden">
-              {(Object.keys(VIEW_LABELS) as PlannerView[]).map((option) => {
+              {VIEW_ORDER.map((option) => {
                 const Icon = VIEW_ICONS[option]
                 const isActive = view === option
                 return (

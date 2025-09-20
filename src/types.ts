@@ -18,7 +18,7 @@ export type PlannerItem = {
   updatedAt: string
 }
 
-export type PlannerView = 'month' | 'week' | 'day'
+export type PlannerView = 'year' | 'month' | 'week' | 'day'
 
 export type DateRangePreset =
   | 'this-week'

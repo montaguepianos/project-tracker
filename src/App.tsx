@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { addDays, addMonths, parseISO, startOfMonth } from 'date-fns'
+import { addDays, addMonths, addYears, parseISO, startOfMonth, startOfYear } from 'date-fns'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { EditDrawer } from '@/components/EditDrawer'
 import { useUrlSync } from '@/hooks/useUrlSync'
 import { useThemeStore } from '@/store/themeStore'
 import { usePlannerStore } from '@/store/plannerStore'
+import { YearView } from '@/views/YearView'
 import { MonthView } from '@/views/MonthView'
 import { WeekView } from '@/views/WeekView'
 import { DayView } from '@/views/DayView'
 import { ItemDetailsModal } from '@/components/ItemDetailsModal'
 import { ItemDeleteDialog } from '@/components/ItemDeleteDialog'
 import { formatISODate } from '@/lib/string'
-import { clampToPlannerRange, getMonthRangeFor, MIN_PLANNER_DATE, MAX_PLANNER_DATE } from '@/lib/date'
+import { clampToPlannerRange, getMonthRangeFor, getYearRangeFor, MIN_PLANNER_DATE, MAX_PLANNER_DATE } from '@/lib/date'
 
 function isEditableElement(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
@@ -37,6 +38,7 @@ export default function App() {
   const setFocusedDate = usePlannerStore((state) => state.setFocusedDate)
   const setReferenceDate = usePlannerStore((state) => state.setReferenceDate)
   const setFilters = usePlannerStore((state) => state.setFilters)
+  const setView = usePlannerStore((state) => state.setView)
   const deleteItem = usePlannerStore((state) => state.deleteItem)
   const undo = usePlannerStore((state) => state.undo)
   const restoreLastDeleted = usePlannerStore((state) => state.restoreLastDeleted)
@@ -48,6 +50,35 @@ export default function App() {
   useEffect(() => {
     initTheme()
   }, [initTheme])
+
+  useEffect(() => {
+    const refDate = parseISO(referenceDate)
+
+    if (view === 'month') {
+      const start = startOfMonth(refDate)
+      const startIso = formatISODate(start)
+      if (referenceDate !== startIso) {
+        setReferenceDate(startIso)
+      }
+    }
+  }, [referenceDate, setReferenceDate, view])
+
+  useEffect(() => {
+    if (view !== 'year') return
+
+    const refDate = parseISO(referenceDate)
+    const start = startOfYear(refDate)
+    const startIso = formatISODate(start)
+
+    if (referenceDate !== startIso) {
+      setReferenceDate(startIso)
+      return
+    }
+
+    if (!focusedDate.startsWith(startIso.slice(0, 4))) {
+      setFocusedDate(startIso)
+    }
+  }, [focusedDate, referenceDate, setFocusedDate, setReferenceDate, view])
 
   const moveFocus = useCallback(
     (delta: number) => {
@@ -80,6 +111,27 @@ export default function App() {
     [referenceDate, setFilters, setFocusedDate, setReferenceDate],
   )
 
+  const stepYear = useCallback(
+    (delta: number) => {
+      const base = clampToPlannerRange(startOfYear(parseISO(referenceDate)))
+      const target = clampToPlannerRange(addYears(base, delta))
+      const { start, end } = getYearRangeFor(target)
+      const startIso = formatISODate(start)
+
+      setReferenceDate(startIso)
+      setFocusedDate(startIso)
+      setFilters((current) => ({
+        ...current,
+        range: {
+          start: startIso,
+          end: formatISODate(end),
+          preset: 'custom',
+        },
+      }))
+    },
+    [referenceDate, setFilters, setFocusedDate, setReferenceDate],
+  )
+
   const openDrawerForDate = useCallback((date: string) => {
     setSelectedItemId(null)
     setDrawerState({ open: true, date, itemId: null })
@@ -94,7 +146,7 @@ export default function App() {
         moveFocus(delta)
       }
 
-      if (view === 'month' || view === 'week' || view === 'day') {
+      if (view === 'month' || view === 'week' || view === 'day' || view === 'year') {
         switch (event.key) {
           case 'ArrowLeft':
             handleDirectional(-1)
@@ -138,6 +190,19 @@ export default function App() {
             return
           }
         }
+
+        if (view === 'year') {
+          if (event.key === '{') {
+            event.preventDefault()
+            stepYear(-1)
+            return
+          }
+          if (event.key === '}') {
+            event.preventDefault()
+            stepYear(1)
+            return
+          }
+        }
       }
 
       if (event.key.toLowerCase() === 'e' && selectedItemId) {
@@ -160,7 +225,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [focusedDate, moveFocus, restoreLastDeleted, selectedItemId, stepMonth, view])
+  }, [focusedDate, moveFocus, restoreLastDeleted, selectedItemId, stepMonth, stepYear, view])
 
   useEffect(() => {
     if (!selectedItemId) return
@@ -232,13 +297,62 @@ export default function App() {
   const canStepPrevMonth = monthAnchor.getTime() > minMonth.getTime()
   const canStepNextMonth = monthAnchor.getTime() < maxMonth.getTime()
 
+  const yearAnchor = useMemo(() => startOfYear(parseISO(referenceDate)), [referenceDate])
+  const minYear = startOfYear(MIN_PLANNER_DATE)
+  const maxYear = startOfYear(MAX_PLANNER_DATE)
+  const canStepPrevYear = yearAnchor.getTime() > minYear.getTime()
+  const canStepNextYear = yearAnchor.getTime() < maxYear.getTime()
+
+  const headingStepHandler = view === 'month' ? stepMonth : view === 'year' ? stepYear : undefined
+  const headingCanPrev =
+    view === 'month' ? canStepPrevMonth : view === 'year' ? canStepPrevYear : undefined
+  const headingCanNext =
+    view === 'month' ? canStepNextMonth : view === 'year' ? canStepNextYear : undefined
+
   return (
     <AppShell
       onAddItem={handleAdd}
-      onStepMonth={view === 'month' ? stepMonth : undefined}
-      canStepPrevMonth={view === 'month' ? canStepPrevMonth : undefined}
-      canStepNextMonth={view === 'month' ? canStepNextMonth : undefined}
+      onStepHeading={headingStepHandler}
+      canStepPrev={headingCanPrev}
+      canStepNext={headingCanNext}
     >
+      {view === 'year' && (
+        <YearView
+          selectedItemId={selectedItemId}
+          onSelectItem={setSelectedItemId}
+          onShowDetails={handleShowDetails}
+          onOpenMonth={(date) => {
+            const start = startOfMonth(date)
+            const { start: rangeStart, end: rangeEnd } = getMonthRangeFor(start)
+            const startIso = formatISODate(rangeStart)
+            setReferenceDate(startIso)
+            setFocusedDate(startIso)
+            setFilters((current) => ({
+              ...current,
+              range: {
+                start: startIso,
+                end: formatISODate(rangeEnd),
+                preset: 'custom',
+              },
+            }))
+            setView('month')
+          }}
+          onOpenDay={(date) => {
+            const iso = formatISODate(date)
+            setReferenceDate(iso)
+            setFocusedDate(iso)
+            setFilters((current) => ({
+              ...current,
+              range: {
+                start: iso,
+                end: iso,
+                preset: 'custom',
+              },
+            }))
+            setView('day')
+          }}
+        />
+      )}
       {view === 'month' && (
         <MonthView
           selectedItemId={selectedItemId}

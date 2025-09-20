@@ -18,6 +18,7 @@ import {
   getThisMonthRange,
   getThisWeekRange,
   getWeekRangeFor,
+  getYearRangeFor,
   MAX_PLANNER_DATE,
   MIN_PLANNER_DATE,
 } from '@/lib/date'
@@ -48,7 +49,15 @@ export function FiltersBar() {
   const focusedDate = usePlannerStore((state) => state.focusedDate)
   const setReferenceDate = usePlannerStore((state) => state.setReferenceDate)
   const setFocusedDate = usePlannerStore((state) => state.setFocusedDate)
+  const setView = usePlannerStore((state) => state.setView)
   const itemsPerProject = useMemo(() => countItemsPerProject(items), [items])
+  const [pendingRange, setPendingRange] = useState<{ start: string; end: string } | null>(null)
+
+  useEffect(() => {
+    if (filters.range.preset !== 'custom') {
+      setPendingRange(null)
+    }
+  }, [filters.range.preset, filters.range.start, filters.range.end])
 
   const applyRangePreset = (range: { start: Date; end: Date }, preset: Filters['range']['preset']) => {
     const startIso = formatISODate(range.start)
@@ -72,6 +81,7 @@ export function FiltersBar() {
         setReferenceDate(startIso)
         setFocusedDate(startIso)
         applyRangePreset(range, 'this-week')
+        setPendingRange(null)
         return
       }
       case 'next-two-weeks': {
@@ -80,25 +90,38 @@ export function FiltersBar() {
         setReferenceDate(startIso)
         setFocusedDate(startIso)
         applyRangePreset(range, 'next-two-weeks')
+        setPendingRange(null)
         return
       }
       case 'this-month': {
+        if (view === 'year') {
+          setView('month')
+        }
         const range = getThisMonthRange()
         const startIso = formatISODate(range.start)
         setReferenceDate(startIso)
         setFocusedDate(startIso)
         applyRangePreset(range, 'this-month')
+        setPendingRange(null)
         return
       }
       case 'next-month': {
+        if (view === 'year') {
+          setView('month')
+        }
         const range = getNextMonthRange()
         const startIso = formatISODate(range.start)
         setReferenceDate(startIso)
         setFocusedDate(startIso)
         applyRangePreset(range, 'next-month')
+        setPendingRange(null)
         return
       }
       default:
+        setPendingRange({
+          start: filters.range.start,
+          end: filters.range.end,
+        })
         setFilters((current) => ({
           ...current,
           range: {
@@ -112,14 +135,62 @@ export function FiltersBar() {
   const visibleProjectIds = useMemo(() => getVisibleProjectIds(filters, projects), [filters, projects])
 
   const jumpValue = useMemo(() => {
+    if (view === 'year') {
+      return format(parseISO(referenceDate), 'yyyy')
+    }
     if (view === 'month') {
       return format(parseISO(referenceDate), 'yyyy-MM')
     }
     return format(parseISO(focusedDate), 'yyyy-MM-dd')
   }, [view, referenceDate, focusedDate])
 
+  const handleApplyCustom = () => {
+    const startRaw = pendingRange?.start ?? filters.range.start
+    const endRaw = pendingRange?.end ?? filters.range.end
+    if (!startRaw || !endRaw) return
+
+    const startDate = clampToPlannerRange(parseISO(startRaw))
+    const endDate = clampToPlannerRange(parseISO(endRaw))
+    const startTime = startDate.getTime()
+    const endTime = endDate.getTime()
+    const startFinal = startTime <= endTime ? startDate : endDate
+    const endFinal = startTime <= endTime ? endDate : startDate
+
+    applyRangePreset({ start: startFinal, end: endFinal }, 'custom')
+
+    if (view !== 'year') {
+      const anchor = formatISODate(startFinal)
+      setReferenceDate(anchor)
+      setFocusedDate(anchor)
+    }
+
+    setPendingRange({ start: formatISODate(startFinal), end: formatISODate(endFinal) })
+  }
+
   const handleJumpToDate = (value: string) => {
     if (!value) return
+
+    if (view === 'year') {
+      const numeric = Number.parseInt(value, 10)
+      if (!Number.isFinite(numeric)) return
+      const minYear = MIN_PLANNER_DATE.getFullYear()
+      const maxYear = MAX_PLANNER_DATE.getFullYear()
+      const clampedYear = Math.min(Math.max(numeric, minYear), maxYear)
+      const base = clampToPlannerRange(new Date(clampedYear, 0, 1))
+      const { start, end } = getYearRangeFor(base)
+      const startIso = formatISODate(start)
+      setReferenceDate(startIso)
+      setFocusedDate(startIso)
+      setFilters((current) => ({
+        ...current,
+        range: {
+          start: startIso,
+          end: formatISODate(end),
+          preset: 'custom',
+        },
+      }))
+      return
+    }
 
     if (view === 'month') {
       const [year, month] = value.split('-').map(Number)
@@ -203,18 +274,18 @@ export function FiltersBar() {
           </SelectContent>
         </Select>
         {filters.range.preset === 'custom' && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Label htmlFor="from" className="text-xs text-muted-foreground">
               From
             </Label>
             <Input
               id="from"
               type="date"
-              value={filters.range.start}
+              value={pendingRange?.start ?? filters.range.start}
               onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  range: { ...current.range, start: event.target.value },
+                setPendingRange((current) => ({
+                  start: event.target.value,
+                  end: current?.end ?? filters.range.end,
                 }))
               }
               className="h-9 w-36"
@@ -225,15 +296,24 @@ export function FiltersBar() {
             <Input
               id="to"
               type="date"
-              value={filters.range.end}
+              value={pendingRange?.end ?? filters.range.end}
               onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  range: { ...current.range, end: event.target.value },
+                setPendingRange((current) => ({
+                  start: current?.start ?? filters.range.start,
+                  end: event.target.value,
                 }))
               }
               className="h-9 w-36"
             />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-label="Apply custom range"
+              onClick={handleApplyCustom}
+            >
+              Apply
+            </Button>
           </div>
         )}
         <JumpToDateControl view={view} value={jumpValue} onChange={handleJumpToDate} />
@@ -535,22 +615,30 @@ function ProjectsPopover({
 
 function JumpToDateControl({ view, value, onChange }: JumpToDateControlProps) {
   const isMonthView = view === 'month'
-  const minValue = format(MIN_PLANNER_DATE, isMonthView ? 'yyyy-MM' : 'yyyy-MM-dd')
-  const maxValue = format(MAX_PLANNER_DATE, isMonthView ? 'yyyy-MM' : 'yyyy-MM-dd')
+  const isYearView = view === 'year'
+
+  const minValue = isYearView
+    ? String(MIN_PLANNER_DATE.getFullYear())
+    : format(MIN_PLANNER_DATE, isMonthView ? 'yyyy-MM' : 'yyyy-MM-dd')
+  const maxValue = isYearView
+    ? String(MAX_PLANNER_DATE.getFullYear())
+    : format(MAX_PLANNER_DATE, isMonthView ? 'yyyy-MM' : 'yyyy-MM-dd')
 
   return (
     <div className="flex items-center gap-2">
       <Label htmlFor="jump-date" className="text-xs text-muted-foreground">
-        Jump to date
+        {isYearView ? 'Jump to year' : 'Jump to date'}
       </Label>
       <Input
         id="jump-date"
-        type={isMonthView ? 'month' : 'date'}
+        type={isYearView ? 'number' : isMonthView ? 'month' : 'date'}
         value={value}
         min={minValue}
         max={maxValue}
+        step={isYearView ? 1 : undefined}
+        inputMode={isYearView ? 'numeric' : undefined}
         onChange={(event) => onChange(event.target.value)}
-        className={isMonthView ? 'h-9 w-[140px]' : 'h-9 w-[160px]'}
+        className={isYearView ? 'h-9 w-[100px]' : isMonthView ? 'h-9 w-[140px]' : 'h-9 w-[160px]'}
       />
     </div>
   )

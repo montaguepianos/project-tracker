@@ -7,6 +7,7 @@ import type { PlannerView, Project } from '@/types'
 type UrlSnapshot = {
   view: PlannerView
   referenceDate: string
+  year?: number
   filters: Filters
 }
 
@@ -41,6 +42,14 @@ function buildSearchString(snapshot: UrlSnapshot) {
   params.set('view', snapshot.view)
   params.set('date', snapshot.referenceDate)
 
+  if (snapshot.view === 'year') {
+    const reference = normalizeToken(snapshot.referenceDate)
+    const year = reference ? reference.slice(0, 4) : snapshot.year?.toString()
+    if (year) {
+      params.set('year', year)
+    }
+  }
+
   if (snapshot.filters.projectFilterMode === 'include') {
     params.set('projects', snapshot.filters.projectIds.join(','))
   }
@@ -66,9 +75,17 @@ function buildSearchString(snapshot: UrlSnapshot) {
 function parseSearch(search: string, fallback: UrlSnapshot, projects: Project[]): UrlSnapshot {
   const params = new URLSearchParams(search)
   const parsedView = normalizeToken(params.get('view'))
-  const view: PlannerView = parsedView === 'week' || parsedView === 'day' ? parsedView : 'month'
+  const view: PlannerView = parsedView === 'week' || parsedView === 'day' || parsedView === 'year' ? parsedView : 'month'
 
-  const nextDate = normalizeToken(params.get('date')) ?? fallback.referenceDate
+  const rawYear = params.get('year')
+  const yearFromParam = rawYear ? Number.parseInt(rawYear, 10) : undefined
+
+  let nextDate = normalizeToken(params.get('date')) ?? fallback.referenceDate
+  if (view === 'year') {
+    const year = Number.isFinite(yearFromParam) ? (yearFromParam as number) : Number.parseInt(nextDate.slice(0, 4), 10)
+    const normalizedYear = Number.isFinite(year) ? year : new Date().getFullYear()
+    nextDate = `${String(normalizedYear).padStart(4, '0')}-01-01`
+  }
 
   const rawProjects = params.get('projects')
   const projectFilterMode: Filters['projectFilterMode'] = rawProjects === null ? 'all' : 'include'
@@ -94,7 +111,7 @@ function parseSearch(search: string, fallback: UrlSnapshot, projects: Project[])
       ? presetParam
       : 'this-week'
 
-  return {
+  const snapshot: UrlSnapshot = {
     view,
     referenceDate: nextDate,
     filters: {
@@ -108,6 +125,15 @@ function parseSearch(search: string, fallback: UrlSnapshot, projects: Project[])
       },
     },
   }
+
+  if (view === 'year') {
+    const year = Number.parseInt(nextDate.slice(0, 4), 10)
+    if (Number.isFinite(year)) {
+      snapshot.year = year
+    }
+  }
+
+  return snapshot
 }
 
 function snapshotsEqual(a: UrlSnapshot, b: UrlSnapshot) {
@@ -138,6 +164,7 @@ export function useUrlSync() {
     () => ({
       view,
       referenceDate,
+      year: view === 'year' ? Number.parseInt(referenceDate.slice(0, 4), 10) : undefined,
       filters,
     }),
     [filters, referenceDate, view],

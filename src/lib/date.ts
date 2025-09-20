@@ -3,15 +3,18 @@ import {
   addDays,
   addMonths,
   addWeeks,
+  addYears,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
+  endOfYear,
   format,
   isSameDay,
   isSameMonth,
   parseISO,
   startOfMonth,
   startOfWeek,
+  startOfYear,
   subDays,
 } from 'date-fns'
 
@@ -88,6 +91,16 @@ export function getWeekRangeFor(date: Date) {
   const start = startOfWeek(date, WEEK_OPTIONS)
   const end = endOfWeek(date, WEEK_OPTIONS)
   return { start, end }
+}
+
+export function getYearRangeFor(date: Date) {
+  const start = startOfYear(date)
+  const end = endOfYear(date)
+  return { start, end }
+}
+
+export function addYearsClamped(base: Date, delta: number) {
+  return addYears(base, delta)
 }
 
 export function getAdjacentDay(date: Date, delta: number) {

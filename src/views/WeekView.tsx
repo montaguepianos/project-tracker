@@ -1,32 +1,29 @@
-import { Fragment, useMemo } from 'react'
-import { isSameMonth, isToday, parseISO } from 'date-fns'
+import { useMemo } from 'react'
+import { isSameDay, parseISO } from 'date-fns'
 
+import { SquareCard } from '@/components/calendar/SquareCard'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { SquareCard } from '@/components/calendar/SquareCard'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useResizeObserver } from '@/hooks/useResizeObserver'
-import { computePacking, MIN_CARD_SIZE } from '@/lib/packing'
-import { getMonthMatrix } from '@/lib/date'
-import { formatISODate } from '@/lib/string'
+import { computePacking } from '@/lib/packing'
+import { getWeekDays } from '@/lib/date'
+import { formatDate } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { usePlannerStore } from '@/store/plannerStore'
 import { getFilteredItems, groupItemsByDate } from '@/store/selectors'
 import type { PlannerItem, Project } from '@/types'
 
-const MIN_CARD_SIZE = 14
-const GAP_LARGE = 6
-const GAP_MEDIUM = 4
-const GAP_SMALL = 2
+const LABEL_THRESHOLD = 28
 
-export type MonthViewProps = {
+export type WeekViewProps = {
   selectedItemId: string | null
   onSelectItem: (id: string) => void
   onEditItem: (id: string) => void
 }
 
-export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthViewProps) {
+export function WeekView({ selectedItemId, onSelectItem, onEditItem }: WeekViewProps) {
   const items = usePlannerStore((state) => state.items)
   const filters = usePlannerStore((state) => state.filters)
   const projects = usePlannerStore((state) => state.projects)
@@ -36,13 +33,13 @@ export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthVie
   const setFocusedDate = usePlannerStore((state) => state.setFocusedDate)
 
   const parsedReference = useMemo(() => parseISO(referenceDate), [referenceDate])
+  const weekDays = useMemo(() => getWeekDays(parsedReference), [parsedReference])
   const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
   const filtered = useMemo(() => getFilteredItems(items, filters, projects), [items, filters, projects])
   const grouped = useMemo(() => groupItemsByDate(filtered), [filtered])
-  const weeks = useMemo(() => getMonthMatrix(parsedReference), [parsedReference])
 
   const handleFocus = (date: Date) => {
-    const iso = formatISODate(date)
+    const iso = formatDate(date, 'yyyy-MM-dd')
     setFocusedDate(iso)
     setReferenceDate(iso)
   }
@@ -54,41 +51,35 @@ export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthVie
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div role="grid" aria-label="Month view" className="grid flex-1 grid-cols-7 gap-px rounded-lg border bg-border">
-        {weeks.map((week, weekIndex) => (
-          <Fragment key={weekIndex}>
-            {week.map((day) => {
-              const iso = formatISODate(day)
-              const dayItems = grouped[iso] ?? []
-              const isCurrentMonth = isSameMonth(day, parsedReference)
-              const isFocused = iso === focusedDate
+      <div role="grid" aria-label="Week view" className="grid flex-1 grid-cols-7 gap-4 rounded-lg border bg-border p-4">
+        {weekDays.map((day) => {
+          const iso = formatDate(day, 'yyyy-MM-dd')
+          const dayItems = grouped[iso] ?? []
+          const isToday = isSameDay(day, new Date())
+          const isFocused = iso === focusedDate
 
-              return (
-                <DayCell
-                  key={iso}
-                  displayDate={day}
-                  items={dayItems}
-                  isCurrentMonth={isCurrentMonth}
-                  isFocused={isFocused}
-                  isToday={isToday(day)}
-                  selectedItemId={selectedItemId}
-                  onFocus={handleFocus}
-                  onOpenItem={handleOpenItem}
-                  projectMap={projectMap}
-                />
-              )
-            })}
-          </Fragment>
-        ))}
+          return (
+            <WeekDayColumn
+              key={iso}
+              date={day}
+              items={dayItems}
+              isFocused={isFocused}
+              isToday={isToday}
+              selectedItemId={selectedItemId}
+              onFocus={handleFocus}
+              onOpenItem={handleOpenItem}
+              projectMap={projectMap}
+            />
+          )
+        })}
       </div>
     </TooltipProvider>
   )
 }
 
-type DayCellProps = {
-  displayDate: Date
+type WeekDayColumnProps = {
+  date: Date
   items: PlannerItem[]
-  isCurrentMonth: boolean
   isFocused: boolean
   isToday: boolean
   selectedItemId: string | null
@@ -97,37 +88,28 @@ type DayCellProps = {
   projectMap: Map<string, Project>
 }
 
-function DayCell({
-  displayDate,
-  items,
-  isCurrentMonth,
-  isFocused,
-  isToday,
-  selectedItemId,
-  onFocus,
-  onOpenItem,
-  projectMap,
-}: DayCellProps) {
+function WeekDayColumn({ date, items, isFocused, isToday, selectedItemId, onFocus, onOpenItem, projectMap }: WeekDayColumnProps) {
   const { ref, width, height } = useResizeObserver<HTMLDivElement>()
   const layout = useMemo(() => computePacking(width, height, items.length), [width, height, items.length])
   const visibleItems = layout.visibleCount ? items.slice(0, layout.visibleCount) : []
   const overflowItems = layout.visibleCount < items.length ? items.slice(layout.visibleCount) : []
+
+  const labelDate = formatDate(date, 'EEE d MMM')
 
   return (
     <div
       role="gridcell"
       tabIndex={isFocused ? 0 : -1}
       aria-selected={isFocused}
-      onFocus={() => onFocus(displayDate)}
-      onClick={() => onFocus(displayDate)}
+      onClick={() => onFocus(date)}
       className={cn(
-        'flex h-32 flex-col gap-2 bg-background p-2 outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring',
+        'flex h-full min-h-[240px] flex-col gap-3 rounded-lg bg-background p-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         isFocused && 'ring-2 ring-primary/60',
       )}
     >
-      <div className="flex items-center justify-between text-xs">
-        <span className={isCurrentMonth ? 'font-medium' : 'text-muted-foreground'}>{displayDate.getDate()}</span>
-        {isToday && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] text-primary-foreground">Today</span>}
+      <div className="flex items-center justify-between text-sm font-medium">
+        <span>{labelDate}</span>
+        {isToday && <span className="rounded-full bg-primary/90 px-2 py-0.5 text-[10px] text-primary-foreground">Today</span>}
       </div>
       <div
         ref={ref}
@@ -138,16 +120,21 @@ function DayCell({
           gridAutoRows: layout.squareSize ? `${layout.squareSize}px` : undefined,
         }}
       >
-        {visibleItems.map((item) => (
-          <SquareCard
-            key={item.id}
-            item={item}
-            project={projectMap.get(item.projectId) ?? null}
-            isSelected={selectedItemId === item.id}
-            onOpen={onOpenItem}
-            size={layout.squareSize}
-          />
-        ))}
+        {visibleItems.map((item) => {
+          const project = projectMap.get(item.projectId) ?? null
+          return (
+            <SquareCard
+              key={item.id}
+              item={item}
+              project={project}
+              isSelected={selectedItemId === item.id}
+              onOpen={onOpenItem}
+              size={layout.squareSize}
+              showLabel={layout.squareSize >= LABEL_THRESHOLD}
+              label={item.title}
+            />
+          )
+        })}
         {overflowItems.length > 0 && (
           <OverflowBadge
             items={overflowItems}

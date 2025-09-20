@@ -10,11 +10,11 @@ type SquareCardProps = {
   item: PlannerItem
   project: Project | null
   isSelected: boolean
-  onOpen: (id: string) => void
+  onActivate: (id: string) => void
   size: number
 }
 
-const SquareCardBase = ({ item, project, isSelected, onOpen, size }: SquareCardProps) => {
+const SquareCardBase = ({ item, project, isSelected, onActivate, size }: SquareCardProps) => {
   const background = project?.colour ?? '#888888'
   const textColour = ensureReadableText(background)
   const projectName = project?.name ?? 'Project'
@@ -37,7 +37,13 @@ const SquareCardBase = ({ item, project, isSelected, onOpen, size }: SquareCardP
             height: `${size}px`,
           }}
           aria-label={`${projectName}: ${item.title}`}
-          onClick={() => onOpen(item.id)}
+          aria-haspopup="dialog"
+          data-prevent-day-open="true"
+          onClick={(event) => {
+            event.stopPropagation()
+            onActivate(item.id)
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
         >
           <span className="sr-only">{item.title}</span>
           {Icon && <Icon className="pointer-events-none" size={iconSize} />}

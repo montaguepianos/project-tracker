@@ -16,10 +16,10 @@ import { OverflowBadge } from '@/components/calendar/OverflowBadge'
 export type MonthViewProps = {
   selectedItemId: string | null
   onSelectItem: (id: string) => void
-  onEditItem: (id: string) => void
+  onShowDetails: (id: string) => void
 }
 
-export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthViewProps) {
+export function MonthView({ selectedItemId, onSelectItem, onShowDetails }: MonthViewProps) {
   const items = usePlannerStore((state) => state.items)
   const filters = usePlannerStore((state) => state.filters)
   const projects = usePlannerStore((state) => state.projects)
@@ -27,6 +27,7 @@ export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthVie
   const focusedDate = usePlannerStore((state) => state.focusedDate)
   const setReferenceDate = usePlannerStore((state) => state.setReferenceDate)
   const setFocusedDate = usePlannerStore((state) => state.setFocusedDate)
+  const setView = usePlannerStore((state) => state.setView)
 
   const parsedReference = useMemo(() => parseISO(referenceDate), [referenceDate])
   const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
@@ -40,9 +41,16 @@ export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthVie
     setReferenceDate(iso)
   }
 
-  const handleOpenItem = (id: string) => {
+  const handleActivateItem = (id: string) => {
     onSelectItem(id)
-    onEditItem(id)
+    onShowDetails(id)
+  }
+
+  const openDayView = (date: Date) => {
+    const iso = formatISODate(date)
+    setFocusedDate(iso)
+    setReferenceDate(iso)
+    setView('day')
   }
 
   return (
@@ -66,7 +74,8 @@ export function MonthView({ selectedItemId, onSelectItem, onEditItem }: MonthVie
                   isToday={isToday(day)}
                   selectedItemId={selectedItemId}
                   onFocus={handleFocus}
-                  onOpenItem={handleOpenItem}
+                  onActivateItem={handleActivateItem}
+                  onOpenDay={openDayView}
                   projectMap={projectMap}
                 />
               )
@@ -86,7 +95,8 @@ type DayCellProps = {
   isToday: boolean
   selectedItemId: string | null
   onFocus: (date: Date) => void
-  onOpenItem: (id: string) => void
+  onActivateItem: (id: string) => void
+  onOpenDay: (date: Date) => void
   projectMap: Map<string, Project>
 }
 
@@ -98,7 +108,8 @@ function DayCell({
   isToday,
   selectedItemId,
   onFocus,
-  onOpenItem,
+  onActivateItem,
+  onOpenDay,
   projectMap,
 }: DayCellProps) {
   const { ref, width, height } = useResizeObserver<HTMLDivElement>()
@@ -113,6 +124,14 @@ function DayCell({
       aria-selected={isFocused}
       onFocus={() => onFocus(displayDate)}
       onClick={() => onFocus(displayDate)}
+      onDoubleClick={(event) => {
+        const target = event.target as HTMLElement
+        if (target.closest('[data-prevent-day-open="true"]')) {
+          return
+        }
+        onFocus(displayDate)
+        onOpenDay(displayDate)
+      }}
       className={cn(
         'flex h-32 flex-col gap-2 bg-background p-2 outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring',
         isFocused && 'ring-2 ring-primary/60',
@@ -137,7 +156,10 @@ function DayCell({
             item={item}
             project={projectMap.get(item.projectId) ?? null}
             isSelected={selectedItemId === item.id}
-            onOpen={onOpenItem}
+            onActivate={(id) => {
+              onFocus(displayDate)
+              onActivateItem(id)
+            }}
             size={layout.squareSize}
           />
         ))}
@@ -145,7 +167,10 @@ function DayCell({
           <OverflowBadge
             items={overflowItems}
             selectedItemId={selectedItemId}
-            onOpen={onOpenItem}
+            onActivate={(id) => {
+              onFocus(displayDate)
+              onActivateItem(id)
+            }}
             projectMap={projectMap}
             size={layout.squareSize}
           />

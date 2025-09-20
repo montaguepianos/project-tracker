@@ -3,6 +3,7 @@ import { addDays, parseISO } from 'date-fns'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { NotesContent } from '@/components/NotesContent'
 import { usePlannerStore } from '@/store/plannerStore'
 import { getFilteredItems } from '@/store/selectors'
 import { formatISODate } from '@/lib/string'
@@ -182,8 +183,8 @@ function DayViewItem({ item, project, isSelected, onEdit, onDelete, onFocus }: D
             )}
           </div>
           {item.notes && (
-            <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-              {item.notes}
+            <div className="rounded-md bg-muted/40 p-3">
+              <NotesContent value={item.notes} />
             </div>
           )}
         </div>

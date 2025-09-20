@@ -9,6 +9,7 @@ import { usePlannerStore } from '@/store/plannerStore'
 import { MonthView } from '@/views/MonthView'
 import { WeekView } from '@/views/WeekView'
 import { DayView } from '@/views/DayView'
+import { ItemDetailsModal } from '@/components/ItemDetailsModal'
 import { formatISODate } from '@/lib/string'
 
 function isEditableElement(target: EventTarget | null) {
@@ -24,6 +25,7 @@ export default function App() {
   const [drawerState, setDrawerState] = useState<{ open: boolean; itemId?: string | null; date?: string }>({
     open: false,
   })
+  const [detailsItemId, setDetailsItemId] = useState<string | null>(null)
   const initTheme = useThemeStore((state) => state.initTheme)
 
   const view = usePlannerStore((state) => state.view)
@@ -34,6 +36,7 @@ export default function App() {
   const undo = usePlannerStore((state) => state.undo)
   const restoreLastDeleted = usePlannerStore((state) => state.restoreLastDeleted)
   const items = usePlannerStore((state) => state.items)
+  const projects = usePlannerStore((state) => state.projects)
 
   const focused = useMemo(() => parseISO(focusedDate), [focusedDate])
 
@@ -132,6 +135,19 @@ export default function App() {
     }
   }, [items, selectedItemId])
 
+  useEffect(() => {
+    if (!detailsItemId) return
+    const exists = items.some((item) => item.id === detailsItemId)
+    if (!exists) {
+      setDetailsItemId(null)
+    }
+  }, [detailsItemId, items])
+
+  const openDrawerForItem = useCallback((id: string) => {
+    setSelectedItemId(id)
+    setDrawerState({ open: true, itemId: id })
+  }, [])
+
   const handleAdd = () => openDrawerForDate(focusedDate)
 
   const handleDeleteItem = useCallback(
@@ -140,9 +156,21 @@ export default function App() {
       if (!confirmDelete) return
       deleteItem(id)
       setSelectedItemId((current) => (current === id ? null : current))
+      setDetailsItemId((current) => (current === id ? null : current))
     },
     [deleteItem],
   )
+
+  const handleShowDetails = useCallback((id: string) => {
+    setSelectedItemId(id)
+    setDetailsItemId(id)
+  }, [])
+
+  const detailItem = useMemo(() => items.find((item) => item.id === detailsItemId) ?? null, [detailsItemId, items])
+  const detailProject = useMemo(() => {
+    if (!detailItem) return null
+    return projects.find((project) => project.id === detailItem.projectId) ?? null
+  }, [detailItem, projects])
 
   return (
     <AppShell onAddItem={handleAdd}>
@@ -150,30 +178,21 @@ export default function App() {
         <MonthView
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
-          onEditItem={(id) => {
-            setSelectedItemId(id)
-            setDrawerState({ open: true, itemId: id })
-          }}
+          onShowDetails={handleShowDetails}
         />
       )}
       {view === 'week' && (
         <WeekView
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
-          onEditItem={(id) => {
-            setSelectedItemId(id)
-            setDrawerState({ open: true, itemId: id })
-          }}
+          onShowDetails={handleShowDetails}
         />
       )}
       {view === 'day' && (
         <DayView
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
-          onEditItem={(id) => {
-            setSelectedItemId(id)
-            setDrawerState({ open: true, itemId: id })
-          }}
+          onEditItem={openDrawerForItem}
           onDeleteItem={handleDeleteItem}
         />
       )}
@@ -196,6 +215,17 @@ export default function App() {
         itemId={drawerState.itemId ?? undefined}
         date={drawerState.date}
         onClose={() => setDrawerState({ open: false })}
+      />
+
+      <ItemDetailsModal
+        open={Boolean(detailsItemId && detailItem)}
+        item={detailItem}
+        project={detailProject}
+        onClose={() => setDetailsItemId(null)}
+        onEdit={(id) => {
+          setDetailsItemId(null)
+          openDrawerForItem(id)
+        }}
       />
     </AppShell>
   )

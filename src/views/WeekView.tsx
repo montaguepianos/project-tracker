@@ -20,7 +20,7 @@ const MIN_CARD_SIZE = 18
 export type WeekViewProps = {
   selectedItemId: string | null
   onSelectItem: (id: string) => void
-  onEditItem: (id: string) => void
+  onShowDetails: (id: string) => void
 }
 
 type WeekLayout = {
@@ -32,7 +32,7 @@ type WeekLayout = {
   showLabels: boolean
 }
 
-export function WeekView({ selectedItemId, onSelectItem, onEditItem }: WeekViewProps) {
+export function WeekView({ selectedItemId, onSelectItem, onShowDetails }: WeekViewProps) {
   const items = usePlannerStore((state) => state.items)
   const filters = usePlannerStore((state) => state.filters)
   const projects = usePlannerStore((state) => state.projects)
@@ -40,6 +40,7 @@ export function WeekView({ selectedItemId, onSelectItem, onEditItem }: WeekViewP
   const focusedDate = usePlannerStore((state) => state.focusedDate)
   const setFocusedDate = usePlannerStore((state) => state.setFocusedDate)
   const setReferenceDate = usePlannerStore((state) => state.setReferenceDate)
+  const setView = usePlannerStore((state) => state.setView)
 
   const parsedReference = useMemo(() => parseISO(referenceDate), [referenceDate])
   const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
@@ -53,9 +54,16 @@ export function WeekView({ selectedItemId, onSelectItem, onEditItem }: WeekViewP
     setReferenceDate(iso)
   }
 
-  const handleOpenItem = (id: string) => {
+  const handleActivateItem = (id: string) => {
     onSelectItem(id)
-    onEditItem(id)
+    onShowDetails(id)
+  }
+
+  const openDayView = (nextDate: Date) => {
+    const iso = formatISODate(nextDate)
+    setFocusedDate(iso)
+    setReferenceDate(iso)
+    setView('day')
   }
 
   return (
@@ -75,16 +83,17 @@ export function WeekView({ selectedItemId, onSelectItem, onEditItem }: WeekViewP
             return (
               <WeekDayCell
                 key={iso}
-              date={day}
-              label={dayLabel}
-              items={dayItems}
-              isToday={isToday(day)}
-              isFocused={isFocused}
-              projectMap={projectMap}
-              selectedItemId={selectedItemId}
-              onFocus={handleFocus}
-              onOpenItem={handleOpenItem}
-            />
+                date={day}
+                label={dayLabel}
+                items={dayItems}
+                isToday={isToday(day)}
+                isFocused={isFocused}
+                projectMap={projectMap}
+                selectedItemId={selectedItemId}
+                onFocus={handleFocus}
+                onActivateItem={handleActivateItem}
+                onOpenDay={openDayView}
+              />
           )
           })}
         </div>
@@ -102,7 +111,8 @@ type WeekDayCellProps = {
   projectMap: Map<string, Project>
   selectedItemId: string | null
   onFocus: (date: Date) => void
-  onOpenItem: (id: string) => void
+  onActivateItem: (id: string) => void
+  onOpenDay: (date: Date) => void
 }
 
 function WeekDayCell({
@@ -114,7 +124,8 @@ function WeekDayCell({
   projectMap,
   selectedItemId,
   onFocus,
-  onOpenItem,
+  onActivateItem,
+  onOpenDay,
 }: WeekDayCellProps) {
   const { ref, width, height } = useResizeObserver<HTMLDivElement>()
 
@@ -153,6 +164,14 @@ function WeekDayCell({
       aria-selected={isFocused}
       onFocus={() => onFocus(date)}
       onClick={() => onFocus(date)}
+      onDoubleClick={(event) => {
+        const target = event.target as HTMLElement
+        if (target.closest('[data-prevent-day-open="true"]')) {
+          return
+        }
+        onFocus(date)
+        onOpenDay(date)
+      }}
       className={cn(
         'flex min-h-[260px] flex-col rounded-lg border bg-background p-4 outline-none transition focus-visible:ring-2 focus-visible:ring-ring',
         isFocused && 'ring-2 ring-primary/60',
@@ -189,7 +208,10 @@ function WeekDayCell({
               item={item}
               project={projectMap.get(item.projectId) ?? null}
               isSelected={selectedItemId === item.id}
-              onOpen={onOpenItem}
+              onActivate={(id) => {
+                onFocus(date)
+                onActivateItem(id)
+              }}
               size={layout.squareSize}
             />
             {layout.showLabels && (
@@ -201,7 +223,10 @@ function WeekDayCell({
           <OverflowBadge
             items={overflowItems}
             selectedItemId={selectedItemId}
-            onOpen={onOpenItem}
+            onActivate={(id) => {
+              onFocus(date)
+              onActivateItem(id)
+            }}
             projectMap={projectMap}
             size={layout.squareSize}
           />

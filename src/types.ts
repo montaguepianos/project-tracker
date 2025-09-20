@@ -20,4 +20,9 @@ export type PlannerItem = {
 
 export type PlannerView = 'month' | 'week' | 'day'
 
-export type DateRangePreset = 'this-week' | 'next-two-weeks' | 'this-month' | 'custom'
+export type DateRangePreset =
+  | 'this-week'
+  | 'next-two-weeks'
+  | 'this-month'
+  | 'next-month'
+  | 'custom'

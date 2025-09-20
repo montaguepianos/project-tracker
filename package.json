@@ -23,7 +23,9 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "html2canvas": "^1.4.1",
     "idb-keyval": "^6.2.2",
+    "jspdf": "^2.5.1",
     "lucide-react": "^0.544.0",
     "nanoid": "^5.1.5",
     "react": "^19.1.1",
@@ -50,5 +52,17 @@
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.43.0",
     "vite": "^7.1.6"
+  },
+  "imports": {
+    "jspdf": {
+      "browser": {
+        "default": "./node_modules/jspdf/dist/jspdf.es.min.js"
+      }
+    },
+    "html2canvas": {
+      "browser": {
+        "default": "./node_modules/html2canvas/dist/html2canvas.esm.js"
+      }
+    }
   }
 }

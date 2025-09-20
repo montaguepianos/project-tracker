@@ -1,16 +1,22 @@
 import type { ReactNode } from 'react'
-import { Eye, LayoutGrid, Rows3 } from 'lucide-react'
+import { useCallback, useMemo, useRef } from 'react'
+import { ChevronLeft, ChevronRight, Eye, FileDown, LayoutGrid, Printer, Rows3 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { FiltersBar } from '@/components/FiltersBar'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { usePlannerStore } from '@/store/plannerStore'
-import type { PlannerView } from '@/types'
+import { usePlannerStore, getVisibleProjectIds } from '@/store/plannerStore'
+import type { PlannerView, Project } from '@/types'
 import { formatDate, MONTH_LABEL_FORMAT } from '@/lib/date'
+import { formatISODate } from '@/lib/string'
+import { exportElementToPdf } from '@/lib/pdf'
 
 type AppShellProps = {
   children: ReactNode
   onAddItem: () => void
+  onStepMonth?: (delta: number) => void
+  canStepPrevMonth?: boolean
+  canStepNextMonth?: boolean
 }
 
 const VIEW_ICONS: Record<PlannerView, React.ComponentType<{ className?: string }>> = {
@@ -25,10 +31,52 @@ const VIEW_LABELS: Record<PlannerView, string> = {
   day: 'Day',
 }
 
-export function AppShell({ children, onAddItem }: AppShellProps) {
+export function AppShell({ children, onAddItem, onStepMonth, canStepNextMonth = true, canStepPrevMonth = true }: AppShellProps) {
   const view = usePlannerStore((state) => state.view)
   const referenceDate = usePlannerStore((state) => state.referenceDate)
   const setView = usePlannerStore((state) => state.setView)
+  const filters = usePlannerStore((state) => state.filters)
+  const projects = usePlannerStore((state) => state.projects)
+
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  const visibleProjectIds = useMemo(() => getVisibleProjectIds(filters, projects), [filters, projects])
+  const legendProjects = useMemo(() => {
+    if (view === 'day') return []
+    const allowed = new Set(visibleProjectIds)
+    return projects.filter((project) => allowed.has(project.id))
+  }, [projects, visibleProjectIds, view])
+
+  const handlePrint = useCallback(() => {
+    const orientation = view === 'day' ? 'portrait' : 'landscape'
+    const style = document.createElement('style')
+    style.setAttribute('data-print-orientation', orientation)
+    style.textContent = `@page { size: A4 ${orientation}; margin: 12mm; }`
+    document.head.appendChild(style)
+
+    window.setTimeout(() => {
+      window.print()
+      window.setTimeout(() => {
+        if (style.parentNode) {
+          style.parentNode.removeChild(style)
+        }
+      }, 0)
+    }, 50)
+  }, [view])
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!contentRef.current) return
+    const orientation = view === 'day' ? 'portrait' : 'landscape'
+    const filename = `planner-${view}-${formatISODate(referenceDate)}.pdf`
+    document.body.classList.add('exporting-pdf')
+    try {
+      await exportElementToPdf(contentRef.current, { filename, orientation })
+    } catch (error) {
+      console.error('Failed to export PDF', error)
+    } finally {
+      document.body.classList.remove('exporting-pdf')
+    }
+  }, [referenceDate, view])
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/20">
@@ -37,9 +85,35 @@ export function AppShell({ children, onAddItem }: AppShellProps) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Planning</p>
-              <h1 className="text-lg font-semibold">{formatDate(referenceDate, MONTH_LABEL_FORMAT)}</h1>
+              <div className="flex items-center gap-2">
+                {view === 'month' && onStepMonth && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    onClick={() => onStepMonth(-1)}
+                    disabled={!canStepPrevMonth}
+                    aria-label="Previous month"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                )}
+                <h1 className="text-lg font-semibold">{formatDate(referenceDate, MONTH_LABEL_FORMAT)}</h1>
+                {view === 'month' && onStepMonth && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    onClick={() => onStepMonth(1)}
+                    disabled={!canStepNextMonth}
+                    aria-label="Next month"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 print-hidden">
               {(Object.keys(VIEW_LABELS) as PlannerView[]).map((option) => {
                 const Icon = VIEW_ICONS[option]
                 const isActive = view === option
@@ -56,16 +130,62 @@ export function AppShell({ children, onAddItem }: AppShellProps) {
                   </Button>
                 )
               })}
-              <Button onClick={onAddItem}>Add item</Button>
-              <ThemeToggle />
+              <div className="flex items-center gap-2">
+                <Button variant="outline" className="gap-2" onClick={handlePrint}>
+                  <Printer className="h-4 w-4" />
+                  Print
+                </Button>
+                <Button variant="outline" className="gap-2" onClick={handleDownloadPdf}>
+                  <FileDown className="h-4 w-4" />
+                  PDF
+                </Button>
+                <Button onClick={onAddItem}>Add item</Button>
+                <ThemeToggle />
+              </div>
             </div>
           </div>
-          <FiltersBar />
+          <div className="print-hidden">
+            <FiltersBar />
+          </div>
         </div>
       </header>
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-6">
+      <main ref={contentRef} className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-6 printable-content">
         {children}
+        <PrintableLegend projects={legendProjects} />
+        <PrintFooter />
       </main>
     </div>
+  )
+}
+
+function PrintableLegend({ projects }: { projects: Project[] }) {
+  if (projects.length === 0) return null
+
+  return (
+    <section className="print-only mt-8 border-t pt-4">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide">Project legend</h2>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {projects.map((project) => (
+          <div key={project.id} className="flex items-center gap-2 text-sm">
+            <span
+              className="h-3 w-3 rounded-sm border"
+              style={{ backgroundColor: project.colour }}
+              aria-hidden="true"
+            />
+            <span>{project.name}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function PrintFooter() {
+  const printableDate = formatDate(new Date(), 'd MMM yyyy')
+  return (
+    <footer className="print-only mt-10 flex items-center justify-between border-t pt-2 text-xs text-muted-foreground">
+      <span>Leila’s Visual Project Tracker</span>
+      <span>Printed {printableDate}</span>
+    </footer>
   )
 }

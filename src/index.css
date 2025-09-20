@@ -58,3 +58,42 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+.print-hidden {
+  display: inherit;
+}
+
+.print-only {
+  display: none !important;
+}
+
+body.exporting-pdf .print-only {
+  display: block !important;
+}
+
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color-adjust: exact;
+  }
+
+  .print-hidden,
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .printable-content {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .printable-content * {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

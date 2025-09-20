@@ -93,7 +93,7 @@ const initialRange = () => {
 }
 
 const initialFilters = (): Filters => ({
-  projectFilterMode: 'all',
+  projectFilterMode: 'include',
   projectIds: [],
   search: '',
   range: initialRange(),
@@ -103,7 +103,7 @@ function createDefaultProject(): Project {
   const now = new Date().toISOString()
   return {
     id: nanoid(),
-    name: 'General',
+    name: 'Archived',
     colour: '#1C7ED6',
     createdAt: now,
     updatedAt: now,
@@ -412,7 +412,7 @@ export const usePlannerStore = create<PlannerStore>()(
             const projectsMap = new Map<string, Project>()
             const items: PlannerItem[] = []
             const ensureProject = (name: string, colourHint?: string): Project => {
-              const trimmed = name.trim() || 'General'
+              const trimmed = name.trim() || 'Archived'
               const key = trimmed.toLowerCase()
               if (projectsMap.has(key)) {
                 return projectsMap.get(key) as Project
@@ -431,7 +431,7 @@ export const usePlannerStore = create<PlannerStore>()(
             }
 
             for (const raw of legacyItems) {
-              const projectName = typeof raw.project === 'string' ? raw.project : 'General'
+              const projectName = typeof raw.project === 'string' ? raw.project : 'Archived'
               const project = ensureProject(projectName, raw.colour)
               const createdAt = typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString()
               const updatedAt = typeof raw.updatedAt === 'string' ? raw.updatedAt : createdAt

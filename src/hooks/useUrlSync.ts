@@ -87,7 +87,10 @@ function parseSearch(search: string, fallback: UrlSnapshot, projects: Project[])
   const to = params.get('to') ?? fallback.filters.range.end
   const presetParam = params.get('preset')
   const preset: Filters['range']['preset'] =
-    presetParam === 'next-two-weeks' || presetParam === 'this-month' || presetParam === 'custom'
+    presetParam === 'next-two-weeks' ||
+    presetParam === 'this-month' ||
+    presetParam === 'next-month' ||
+    presetParam === 'custom'
       ? presetParam
       : 'this-week'
 

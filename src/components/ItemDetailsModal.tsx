@@ -22,9 +22,10 @@ export type ItemDetailsModalProps = {
   project: Project | null
   onClose: () => void
   onEdit: (id: string) => void
+  onDelete: (id: string) => void
 }
 
-export function ItemDetailsModal({ open, item, project, onClose, onEdit }: ItemDetailsModalProps) {
+export function ItemDetailsModal({ open, item, project, onClose, onEdit, onDelete }: ItemDetailsModalProps) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
 
   const iconMeta = useMemo(
@@ -127,6 +128,14 @@ export function ItemDetailsModal({ open, item, project, onClose, onEdit }: ItemD
             </Button>
             <Button type="button" onClick={handleEdit} disabled={!item}>
               Edit
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => item && onDelete(item.id)}
+              disabled={!item}
+            >
+              Delete
             </Button>
           </div>
         </DialogFooter>

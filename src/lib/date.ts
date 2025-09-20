@@ -1,6 +1,7 @@
 import { enGB } from 'date-fns/locale'
 import {
   addDays,
+  addMonths,
   addWeeks,
   eachDayOfInterval,
   endOfMonth,
@@ -15,6 +16,19 @@ import {
 } from 'date-fns'
 
 const WEEK_OPTIONS = { weekStartsOn: 1 as const, locale: enGB }
+
+export const MIN_PLANNER_DATE = new Date(2020, 0, 1)
+export const MAX_PLANNER_DATE = new Date(2030, 11, 31)
+
+export function clampToPlannerRange(date: Date) {
+  if (date.getTime() < MIN_PLANNER_DATE.getTime()) {
+    return new Date(MIN_PLANNER_DATE)
+  }
+  if (date.getTime() > MAX_PLANNER_DATE.getTime()) {
+    return new Date(MAX_PLANNER_DATE)
+  }
+  return date
+}
 
 export function formatDate(date: Date | string, dateFormat = 'd MMM yyyy') {
   const value = typeof date === 'string' ? parseISO(date) : date
@@ -55,6 +69,24 @@ export function getNextTwoWeeksRange(baseDate = new Date()) {
 export function getThisMonthRange(baseDate = new Date()) {
   const start = startOfMonth(baseDate)
   const end = endOfMonth(baseDate)
+  return { start, end }
+}
+
+export function getNextMonthRange(baseDate = new Date()) {
+  const next = addMonths(baseDate, 1)
+  const { start, end } = getThisMonthRange(next)
+  return { start, end }
+}
+
+export function getMonthRangeFor(date: Date) {
+  const start = startOfMonth(date)
+  const end = endOfMonth(date)
+  return { start, end }
+}
+
+export function getWeekRangeFor(date: Date) {
+  const start = startOfWeek(date, WEEK_OPTIONS)
+  const end = endOfWeek(date, WEEK_OPTIONS)
   return { start, end }
 }
 

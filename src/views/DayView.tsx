@@ -17,10 +17,10 @@ export type DayViewProps = {
   selectedItemId: string | null
   onSelectItem: (id: string | null) => void
   onEditItem: (id: string) => void
-  onDeleteItem: (id: string) => void
+  onRequestDeleteItem: (id: string) => void
 }
 
-export function DayView({ selectedItemId, onSelectItem, onEditItem, onDeleteItem }: DayViewProps) {
+export function DayView({ selectedItemId, onSelectItem, onEditItem, onRequestDeleteItem }: DayViewProps) {
   const items = usePlannerStore((state) => state.items)
   const filters = usePlannerStore((state) => state.filters)
   const projects = usePlannerStore((state) => state.projects)
@@ -48,7 +48,7 @@ export function DayView({ selectedItemId, onSelectItem, onEditItem, onDeleteItem
 
   const handleDelete = (item: PlannerItem) => {
     onSelectItem(item.id)
-    onDeleteItem(item.id)
+    onRequestDeleteItem(item.id)
   }
 
   const dayLabel = formatDate(focusedDate, 'EEEE d MMMM yyyy')

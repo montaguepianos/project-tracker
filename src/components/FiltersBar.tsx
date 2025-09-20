@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { format, parseISO } from 'date-fns'
 import { CalendarDays, Filter, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -9,17 +10,29 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePlannerStore, getVisibleProjectIds } from '@/store/plannerStore'
 import type { Filters } from '@/store/plannerStore'
-import { getNextTwoWeeksRange, getThisMonthRange, getThisWeekRange } from '@/lib/date'
+import {
+  clampToPlannerRange,
+  getMonthRangeFor,
+  getNextMonthRange,
+  getNextTwoWeeksRange,
+  getThisMonthRange,
+  getThisWeekRange,
+  getWeekRangeFor,
+  MAX_PLANNER_DATE,
+  MIN_PLANNER_DATE,
+} from '@/lib/date'
 import { formatISODate } from '@/lib/string'
 import { cn } from '@/lib/utils'
-import type { PlannerItem, Project } from '@/types'
+import type { PlannerItem, PlannerView, Project } from '@/types'
 import { deriveColour } from '@/lib/colour'
+import { ProjectDeleteDialog } from '@/components/ProjectDeleteDialog'
 
 const PRESETS = [
   { value: 'this-week', label: 'This week' },
   { value: 'next-two-weeks', label: 'Next 2 weeks' },
   { value: 'this-month', label: 'This month' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'next-month', label: 'Next month' },
+  { value: 'custom', label: 'Custom…' },
 ] as const
 
 export function FiltersBar() {
@@ -30,57 +43,133 @@ export function FiltersBar() {
   const selectAllProjects = usePlannerStore((state) => state.selectAllProjects)
   const clearProjectSelection = usePlannerStore((state) => state.clearProjectSelection)
   const items = usePlannerStore((state) => state.items)
+  const view = usePlannerStore((state) => state.view)
+  const referenceDate = usePlannerStore((state) => state.referenceDate)
+  const focusedDate = usePlannerStore((state) => state.focusedDate)
+  const setReferenceDate = usePlannerStore((state) => state.setReferenceDate)
+  const setFocusedDate = usePlannerStore((state) => state.setFocusedDate)
   const itemsPerProject = useMemo(() => countItemsPerProject(items), [items])
 
+  const applyRangePreset = (range: { start: Date; end: Date }, preset: Filters['range']['preset']) => {
+    const startIso = formatISODate(range.start)
+    const endIso = formatISODate(range.end)
+
+    setFilters((current) => ({
+      ...current,
+      range: {
+        start: startIso,
+        end: endIso,
+        preset,
+      },
+    }))
+  }
+
   const handlePresetChange = (next: string) => {
-    setFilters((current) => {
-      switch (next) {
-        case 'this-week': {
-          const { start, end } = getThisWeekRange()
-          return {
-            ...current,
-            range: {
-              start: formatISODate(start),
-              end: formatISODate(end),
-              preset: 'this-week',
-            },
-          }
-        }
-        case 'next-two-weeks': {
-          const { start, end } = getNextTwoWeeksRange()
-          return {
-            ...current,
-            range: {
-              start: formatISODate(start),
-              end: formatISODate(end),
-              preset: 'next-two-weeks',
-            },
-          }
-        }
-        case 'this-month': {
-          const { start, end } = getThisMonthRange()
-          return {
-            ...current,
-            range: {
-              start: formatISODate(start),
-              end: formatISODate(end),
-              preset: 'this-month',
-            },
-          }
-        }
-        default:
-          return {
-            ...current,
-            range: {
-              ...current.range,
-              preset: 'custom',
-            },
-          }
+    switch (next) {
+      case 'this-week': {
+        const range = getThisWeekRange()
+        const startIso = formatISODate(range.start)
+        setReferenceDate(startIso)
+        setFocusedDate(startIso)
+        applyRangePreset(range, 'this-week')
+        return
       }
-    })
+      case 'next-two-weeks': {
+        const range = getNextTwoWeeksRange()
+        const startIso = formatISODate(range.start)
+        setReferenceDate(startIso)
+        setFocusedDate(startIso)
+        applyRangePreset(range, 'next-two-weeks')
+        return
+      }
+      case 'this-month': {
+        const range = getThisMonthRange()
+        const startIso = formatISODate(range.start)
+        setReferenceDate(startIso)
+        setFocusedDate(startIso)
+        applyRangePreset(range, 'this-month')
+        return
+      }
+      case 'next-month': {
+        const range = getNextMonthRange()
+        const startIso = formatISODate(range.start)
+        setReferenceDate(startIso)
+        setFocusedDate(startIso)
+        applyRangePreset(range, 'next-month')
+        return
+      }
+      default:
+        setFilters((current) => ({
+          ...current,
+          range: {
+            ...current.range,
+            preset: 'custom',
+          },
+        }))
+    }
   }
 
   const visibleProjectIds = useMemo(() => getVisibleProjectIds(filters, projects), [filters, projects])
+
+  const jumpValue = useMemo(() => {
+    if (view === 'month') {
+      return format(parseISO(referenceDate), 'yyyy-MM')
+    }
+    return format(parseISO(focusedDate), 'yyyy-MM-dd')
+  }, [view, referenceDate, focusedDate])
+
+  const handleJumpToDate = (value: string) => {
+    if (!value) return
+
+    if (view === 'month') {
+      const [year, month] = value.split('-').map(Number)
+      if (!year || !month) return
+      const base = clampToPlannerRange(new Date(year, month - 1, 1))
+      const { start, end } = getMonthRangeFor(base)
+      const startIso = formatISODate(start)
+      setReferenceDate(startIso)
+      setFocusedDate(startIso)
+      setFilters((current) => ({
+        ...current,
+        range: {
+          start: startIso,
+          end: formatISODate(end),
+          preset: 'custom',
+        },
+      }))
+      return
+    }
+
+    const selected = clampToPlannerRange(parseISO(value))
+
+    if (view === 'week') {
+      const { start, end } = getWeekRangeFor(selected)
+      const startIso = formatISODate(start)
+      setReferenceDate(startIso)
+      setFocusedDate(formatISODate(selected))
+      setFilters((current) => ({
+        ...current,
+        range: {
+          start: startIso,
+          end: formatISODate(end),
+          preset: 'custom',
+        },
+      }))
+      return
+    }
+
+    const iso = formatISODate(selected)
+    setReferenceDate(iso)
+    setFocusedDate(iso)
+    setFilters((current) => ({
+      ...current,
+      range: {
+        start: iso,
+        end: iso,
+        preset: 'custom',
+      },
+    }))
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-md border bg-card/40 p-3">
@@ -99,7 +188,7 @@ export function FiltersBar() {
         toggleProjectVisibility={toggleProjectVisibility}
       />
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <CalendarDays className="h-4 w-4 text-muted-foreground" />
         <Select value={filters.range.preset} onValueChange={handlePresetChange}>
           <SelectTrigger className="w-[160px]">
@@ -147,6 +236,7 @@ export function FiltersBar() {
             />
           </div>
         )}
+        <JumpToDateControl view={view} value={jumpValue} onChange={handleJumpToDate} />
       </div>
 
       <div className="min-w-[200px] flex-1">
@@ -174,6 +264,12 @@ type ProjectsPopoverProps = {
   clearProjectSelection: () => void
 }
 
+type JumpToDateControlProps = {
+  view: PlannerView
+  value: string
+  onChange: (value: string) => void
+}
+
 function ProjectsPopover({
   filters,
   projects,
@@ -194,6 +290,7 @@ function ProjectsPopover({
   const [editName, setEditName] = useState('')
   const [editColour, setEditColour] = useState('#1C7ED6')
   const [editError, setEditError] = useState('')
+  const [projectPendingDelete, setProjectPendingDelete] = useState<Project | null>(null)
 
   useEffect(() => {
     if (createColourDirty) return
@@ -266,18 +363,24 @@ function ProjectsPopover({
     setEditingId(null)
   }
 
-  const handleDelete = (project: Project) => {
-    if (projects.length <= 1) {
-      window.alert('At least one project is required. Create another project before deleting this one.')
-      return
-    }
-
-    if (itemsPerProject[project.id] > 0) {
-      window.alert('This project still has items. Reassign items before deleting.')
-      return
-    }
-    deleteProject(project.id)
+  const handleDeleteRequest = (project: Project) => {
+    setEditingId(null)
+    setEditError('')
+    setProjectPendingDelete(project)
   }
+
+  const handleConfirmDelete = (reassignTo?: string) => {
+    if (!projectPendingDelete) return
+    const options = reassignTo ? { reassignTo } : undefined
+    deleteProject(projectPendingDelete.id, options)
+    setProjectPendingDelete(null)
+  }
+
+  const handleCancelDelete = () => {
+    setProjectPendingDelete(null)
+  }
+
+  const pendingDeleteCount = projectPendingDelete ? itemsPerProject[projectPendingDelete.id] ?? 0 : 0
 
   const isProjectChecked = (projectId: string) => {
     if (filters.projectFilterMode === 'all') return true
@@ -285,134 +388,171 @@ function ProjectsPopover({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" className="gap-2">
-          <Filter className="h-4 w-4" />
-          {buttonLabel}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-96 space-y-4 p-4" align="start">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Projects</span>
-          <div className="flex items-center gap-2 text-xs">
-            <button type="button" onClick={selectAllProjects} className="underline-offset-2 hover:underline">
-              Select all
-            </button>
-            <span aria-hidden="true">·</span>
-            <button type="button" onClick={clearProjectSelection} className="underline-offset-2 hover:underline">
-              Clear all
-            </button>
-          </div>
-        </div>
-
-        <ul className="space-y-2">
-          {projects.map((project) => {
-            const checked = isProjectChecked(project.id)
-            const isEditing = editingId === project.id
-            const usage = itemsPerProject[project.id] ?? 0
-
-            return (
-              <li key={project.id} data-project-id={project.id} className="rounded-md border p-2">
-                {isEditing ? (
-                  <div className="space-y-2">
-                    <Input value={editName} onChange={(event) => setEditName(event.target.value)} placeholder="Project name" />
-                    <div className="flex items-center gap-3">
-                      <Label htmlFor={`colour-${project.id}`} className="text-xs text-muted-foreground">
-                        Colour
-                      </Label>
-                      <Input
-                        id={`colour-${project.id}`}
-                        type="color"
-                        value={editColour}
-                        onChange={(event) => setEditColour(event.target.value)}
-                        className="h-9 w-16"
-                      />
-                    </div>
-                    {editError && <p className="text-xs text-destructive">{editError}</p>}
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={handleEditSave}>
-                        Save
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <Checkbox checked={checked} onCheckedChange={() => toggleProjectVisibility(project.id)} />
-                    <span
-                      className="flex h-4 w-4 rounded-sm border"
-                      style={{ backgroundColor: project.colour }}
-                      aria-hidden="true"
-                    />
-                    <div className="flex-1 text-sm">
-                      <p className="font-medium leading-none">{project.name}</p>
-                      {usage > 0 && (
-                        <p className="text-xs text-muted-foreground">{usage} item{usage === 1 ? '' : 's'}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        onClick={() => startEditing(project)}
-                        aria-label={`Edit ${project.name}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-destructive"
-                        onClick={() => handleDelete(project)}
-                        aria-label={`Delete ${project.name}`}
-                        disabled={usage > 0}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-
-        <div className="space-y-2 rounded-md border border-dashed p-3">
-          <p className="text-sm font-medium">Create project</p>
-          <Input
-            value={createName}
-            onChange={(event) => {
-              setCreateName(event.target.value)
-              setCreateError('')
-            }}
-            placeholder="Name"
-          />
-          <div className="flex items-center gap-3">
-            <Label htmlFor="new-project-colour" className="text-xs text-muted-foreground">
-              Colour
-            </Label>
-            <Input
-              id="new-project-colour"
-              type="color"
-              value={createColour}
-              onChange={(event) => setCreateColour(event.target.value)}
-              className="h-9 w-16"
-            />
-          </div>
-          {createError && <p className="text-xs text-destructive">{createError}</p>}
-          <Button type="button" size="sm" className="gap-2" onClick={handleCreate}>
-            <Plus className="h-4 w-4" />
-            Add project
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="gap-2">
+            <Filter className="h-4 w-4" />
+            {buttonLabel}
           </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
+        </PopoverTrigger>
+        <PopoverContent className="w-96 space-y-4 p-4" align="start">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Projects</span>
+            <div className="flex items-center gap-2 text-xs">
+              <button type="button" onClick={selectAllProjects} className="underline-offset-2 hover:underline">
+                Select all
+              </button>
+              <span aria-hidden="true">·</span>
+              <button type="button" onClick={clearProjectSelection} className="underline-offset-2 hover:underline">
+                Clear all
+              </button>
+            </div>
+          </div>
+
+          <ul className="space-y-2">
+            {projects.map((project) => {
+              const checked = isProjectChecked(project.id)
+              const isEditing = editingId === project.id
+              const usage = itemsPerProject[project.id] ?? 0
+
+              return (
+                <li key={project.id} data-project-id={project.id} className="rounded-md border p-2">
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <Input value={editName} onChange={(event) => setEditName(event.target.value)} placeholder="Project name" />
+                      <div className="flex items-center gap-3">
+                        <Label htmlFor={`colour-${project.id}`} className="text-xs text-muted-foreground">
+                          Colour
+                        </Label>
+                        <Input
+                          id={`colour-${project.id}`}
+                          type="color"
+                          value={editColour}
+                          onChange={(event) => setEditColour(event.target.value)}
+                          className="h-9 w-16"
+                        />
+                      </div>
+                      {editError && <p className="text-xs text-destructive">{editError}</p>}
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handleEditSave}>
+                          Save
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <Checkbox checked={checked} onCheckedChange={() => toggleProjectVisibility(project.id)} />
+                      <span
+                        className="flex h-4 w-4 rounded-sm border"
+                        style={{ backgroundColor: project.colour }}
+                        aria-hidden="true"
+                      />
+                      <div className="flex-1 text-sm">
+                        <p className="font-medium leading-none">{project.name}</p>
+                        {usage > 0 && (
+                          <p className="text-xs text-muted-foreground">{usage} item{usage === 1 ? '' : 's'}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          onClick={() => startEditing(project)}
+                          aria-label={`Edit ${project.name}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => handleDeleteRequest(project)}
+                          aria-label={`Delete ${project.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+
+          <div className="space-y-2 rounded-md border border-dashed p-3">
+            <p className="text-sm font-medium">Create project</p>
+            <Input
+              value={createName}
+              onChange={(event) => {
+                setCreateName(event.target.value)
+                setCreateError('')
+              }}
+              placeholder="Name"
+            />
+            <div className="flex items-center gap-3">
+              <Label htmlFor="new-project-colour" className="text-xs text-muted-foreground">
+                Colour
+              </Label>
+              <Input
+                id="new-project-colour"
+                type="color"
+                value={createColour}
+                onChange={(event) => {
+                  setCreateColour(event.target.value)
+                  setCreateColourDirty(true)
+                }}
+                className="h-9 w-16"
+              />
+            </div>
+            {createError && <p className="text-xs text-destructive">{createError}</p>}
+            <Button type="button" size="sm" className="gap-2" onClick={handleCreate}>
+              <Plus className="h-4 w-4" />
+              Add project
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <ProjectDeleteDialog
+        open={Boolean(projectPendingDelete)}
+        project={projectPendingDelete}
+        projects={projects}
+        itemCount={pendingDeleteCount}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+      />
+    </>
+  )
+}
+
+
+function JumpToDateControl({ view, value, onChange }: JumpToDateControlProps) {
+  const isMonthView = view === 'month'
+  const minValue = format(MIN_PLANNER_DATE, isMonthView ? 'yyyy-MM' : 'yyyy-MM-dd')
+  const maxValue = format(MAX_PLANNER_DATE, isMonthView ? 'yyyy-MM' : 'yyyy-MM-dd')
+
+  return (
+    <div className="flex items-center gap-2">
+      <Label htmlFor="jump-date" className="text-xs text-muted-foreground">
+        Jump to date
+      </Label>
+      <Input
+        id="jump-date"
+        type={isMonthView ? 'month' : 'date'}
+        value={value}
+        min={minValue}
+        max={maxValue}
+        onChange={(event) => onChange(event.target.value)}
+        className={isMonthView ? 'h-9 w-[140px]' : 'h-9 w-[160px]'}
+      />
+    </div>
   )
 }
 

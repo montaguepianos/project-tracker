@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { addDays, parseISO } from 'date-fns'
+import { addDays, addMonths, parseISO, startOfMonth } from 'date-fns'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { EditDrawer } from '@/components/EditDrawer'
@@ -10,7 +10,9 @@ import { MonthView } from '@/views/MonthView'
 import { WeekView } from '@/views/WeekView'
 import { DayView } from '@/views/DayView'
 import { ItemDetailsModal } from '@/components/ItemDetailsModal'
+import { ItemDeleteDialog } from '@/components/ItemDeleteDialog'
 import { formatISODate } from '@/lib/string'
+import { clampToPlannerRange, getMonthRangeFor, MIN_PLANNER_DATE, MAX_PLANNER_DATE } from '@/lib/date'
 
 function isEditableElement(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
@@ -26,12 +28,15 @@ export default function App() {
     open: false,
   })
   const [detailsItemId, setDetailsItemId] = useState<string | null>(null)
+  const [itemDeleteId, setItemDeleteId] = useState<string | null>(null)
   const initTheme = useThemeStore((state) => state.initTheme)
 
   const view = usePlannerStore((state) => state.view)
+  const referenceDate = usePlannerStore((state) => state.referenceDate)
   const focusedDate = usePlannerStore((state) => state.focusedDate)
   const setFocusedDate = usePlannerStore((state) => state.setFocusedDate)
   const setReferenceDate = usePlannerStore((state) => state.setReferenceDate)
+  const setFilters = usePlannerStore((state) => state.setFilters)
   const deleteItem = usePlannerStore((state) => state.deleteItem)
   const undo = usePlannerStore((state) => state.undo)
   const restoreLastDeleted = usePlannerStore((state) => state.restoreLastDeleted)
@@ -52,6 +57,27 @@ export default function App() {
       setReferenceDate(iso)
     },
     [focused, setFocusedDate, setReferenceDate],
+  )
+
+  const stepMonth = useCallback(
+    (delta: number) => {
+      const base = clampToPlannerRange(startOfMonth(parseISO(referenceDate)))
+      const target = clampToPlannerRange(addMonths(base, delta))
+      const { start, end } = getMonthRangeFor(target)
+      const startIso = formatISODate(start)
+
+      setReferenceDate(startIso)
+      setFocusedDate(startIso)
+      setFilters((current) => ({
+        ...current,
+        range: {
+          start: startIso,
+          end: formatISODate(end),
+          preset: 'custom',
+        },
+      }))
+    },
+    [referenceDate, setFilters, setFocusedDate, setReferenceDate],
   )
 
   const openDrawerForDate = useCallback((date: string) => {
@@ -99,6 +125,19 @@ export default function App() {
           default:
             break
         }
+
+        if (view === 'month') {
+          if (event.key === '[') {
+            event.preventDefault()
+            stepMonth(-1)
+            return
+          }
+          if (event.key === ']') {
+            event.preventDefault()
+            stepMonth(1)
+            return
+          }
+        }
       }
 
       if (event.key.toLowerCase() === 'e' && selectedItemId) {
@@ -109,11 +148,7 @@ export default function App() {
 
       if (event.key === 'Delete' && selectedItemId) {
         event.preventDefault()
-        const confirmDelete = window.confirm('Delete the selected item?')
-        if (confirmDelete) {
-          deleteItem(selectedItemId)
-          setSelectedItemId(null)
-        }
+        setItemDeleteId(selectedItemId)
         return
       }
 
@@ -125,7 +160,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [deleteItem, focusedDate, moveFocus, restoreLastDeleted, selectedItemId, view])
+  }, [focusedDate, moveFocus, restoreLastDeleted, selectedItemId, stepMonth, view])
 
   useEffect(() => {
     if (!selectedItemId) return
@@ -143,6 +178,14 @@ export default function App() {
     }
   }, [detailsItemId, items])
 
+  useEffect(() => {
+    if (!itemDeleteId) return
+    const exists = items.some((item) => item.id === itemDeleteId)
+    if (!exists) {
+      setItemDeleteId(null)
+    }
+  }, [itemDeleteId, items])
+
   const openDrawerForItem = useCallback((id: string) => {
     setSelectedItemId(id)
     setDrawerState({ open: true, itemId: id })
@@ -150,21 +193,26 @@ export default function App() {
 
   const handleAdd = () => openDrawerForDate(focusedDate)
 
-  const handleDeleteItem = useCallback(
-    (id: string) => {
-      const confirmDelete = window.confirm('Delete the selected item?')
-      if (!confirmDelete) return
-      deleteItem(id)
-      setSelectedItemId((current) => (current === id ? null : current))
-      setDetailsItemId((current) => (current === id ? null : current))
-    },
-    [deleteItem],
-  )
-
   const handleShowDetails = useCallback((id: string) => {
     setSelectedItemId(id)
     setDetailsItemId(id)
   }, [])
+
+  const handleRequestDeleteItem = useCallback((id: string) => {
+    setItemDeleteId(id)
+  }, [])
+
+  const handleCancelDeleteItem = useCallback(() => {
+    setItemDeleteId(null)
+  }, [])
+
+  const handleConfirmDeleteItem = useCallback(() => {
+    if (!itemDeleteId) return
+    deleteItem(itemDeleteId)
+    setSelectedItemId((current) => (current === itemDeleteId ? null : current))
+    setDetailsItemId((current) => (current === itemDeleteId ? null : current))
+    setItemDeleteId(null)
+  }, [deleteItem, itemDeleteId])
 
   const detailItem = useMemo(() => items.find((item) => item.id === detailsItemId) ?? null, [detailsItemId, items])
   const detailProject = useMemo(() => {
@@ -172,8 +220,25 @@ export default function App() {
     return projects.find((project) => project.id === detailItem.projectId) ?? null
   }, [detailItem, projects])
 
+  const deleteItemTarget = useMemo(() => items.find((item) => item.id === itemDeleteId) ?? null, [itemDeleteId, items])
+  const deleteItemProject = useMemo(() => {
+    if (!deleteItemTarget) return null
+    return projects.find((project) => project.id === deleteItemTarget.projectId) ?? null
+  }, [deleteItemTarget, projects])
+
+  const monthAnchor = useMemo(() => startOfMonth(parseISO(referenceDate)), [referenceDate])
+  const minMonth = startOfMonth(MIN_PLANNER_DATE)
+  const maxMonth = startOfMonth(MAX_PLANNER_DATE)
+  const canStepPrevMonth = monthAnchor.getTime() > minMonth.getTime()
+  const canStepNextMonth = monthAnchor.getTime() < maxMonth.getTime()
+
   return (
-    <AppShell onAddItem={handleAdd}>
+    <AppShell
+      onAddItem={handleAdd}
+      onStepMonth={view === 'month' ? stepMonth : undefined}
+      canStepPrevMonth={view === 'month' ? canStepPrevMonth : undefined}
+      canStepNextMonth={view === 'month' ? canStepNextMonth : undefined}
+    >
       {view === 'month' && (
         <MonthView
           selectedItemId={selectedItemId}
@@ -193,7 +258,7 @@ export default function App() {
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
           onEditItem={openDrawerForItem}
-          onDeleteItem={handleDeleteItem}
+          onRequestDeleteItem={handleRequestDeleteItem}
         />
       )}
 
@@ -226,6 +291,18 @@ export default function App() {
           setDetailsItemId(null)
           openDrawerForItem(id)
         }}
+        onDelete={(id) => {
+          setDetailsItemId(null)
+          setItemDeleteId(id)
+        }}
+      />
+
+      <ItemDeleteDialog
+        open={Boolean(itemDeleteId && deleteItemTarget)}
+        item={deleteItemTarget}
+        project={deleteItemProject}
+        onCancel={handleCancelDeleteItem}
+        onConfirm={handleConfirmDeleteItem}
       />
     </AppShell>
   )

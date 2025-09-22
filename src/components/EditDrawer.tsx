@@ -157,7 +157,6 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
 
   useEffect(() => {
     // TEMP: debug state propagation
-    // eslint-disable-next-line no-console
     console.log('draft.iconCustom changed', draft.iconCustom)
   }, [draft.iconCustom])
 
@@ -182,7 +181,6 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
       return { key, label }
     })()
 
-    // eslint-disable-next-line no-console
     console.log('submit.upsert.input', { draft, iconCustom })
     upsertItem({
       id: currentItem?.id,
@@ -215,7 +213,6 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   }
 
   const handleIconSelect = (value: string) => {
-    // eslint-disable-next-line no-console
     console.log('iconSelect.change', value)
     if (!value) {
       // Ignore spurious empty value emissions from Radix/native select sync
@@ -258,10 +255,8 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
 
   const handleCustomIconApply = (selection: { key: string; label: string }) => {
     // TEMP: debug test flow
-    // eslint-disable-next-line no-console
     console.log('handleCustomIconApply', selection)
     setDraft((prev) => {
-      // eslint-disable-next-line no-console
       console.log('setDraft apply prev.iconCustom -> next', prev.iconCustom, selection)
       return { ...prev, icon: null, iconCustom: selection }
     })

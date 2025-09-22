@@ -2,7 +2,6 @@ import type { ComponentType } from 'react'
 import {
   CalendarClock,
   ClipboardList,
-  Code,
   FlagTriangleRight,
   Lightbulb,
   Megaphone,
@@ -12,6 +11,8 @@ import {
   Sparkles,
   Target,
   Users,
+  Crown,
+  Plane,
 } from 'lucide-react'
 
 export type PlannerIconDefinition = {
@@ -32,6 +33,8 @@ export const PLANNER_ICONS: PlannerIconDefinition[] = [
   { value: 'meeting', label: 'Meeting', icon: Users },
   { value: 'copy', label: 'Copywriting', icon: PenTool },
   { value: 'deadline', label: 'Deadline', icon: FlagTriangleRight },
+  { value: 'vip', label: 'VIP Visit', icon: Crown },
+  { value: 'travel', label: 'Travel', icon: Plane },
 ]
 
 export const PLANNER_CUSTOM_ICON_COLLECTION: PlannerCustomIconDefinition[] = [
@@ -41,7 +44,7 @@ export const PLANNER_CUSTOM_ICON_COLLECTION: PlannerCustomIconDefinition[] = [
   { key: 'creative', label: 'Creative', icon: Palette },
   { key: 'report', label: 'Report', icon: ClipboardList },
   { key: 'spark', label: 'Spark', icon: Sparkles },
-  { key: 'build', label: 'Build', icon: Code },
+  { key: 'travel', label: 'Travel', icon: Plane },
 ]
 
 const BUILTIN_ICON_MAP = new Map(PLANNER_ICONS.map((entry) => [entry.value, entry]))

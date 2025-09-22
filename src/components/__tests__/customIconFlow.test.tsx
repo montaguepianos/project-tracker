@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { render, screen, within, waitFor, waitForElementToBeRemoved } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { EditDrawer } from '@/components/EditDrawer'
@@ -47,7 +47,6 @@ describe('custom icon selection flow', () => {
     await user.click(useIcon)
 
     // Continue flow and verify persistence after save
-    const logSpy2 = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     const saveButton = await screen.findByRole('button', { name: 'Save' })
     await user.click(saveButton)

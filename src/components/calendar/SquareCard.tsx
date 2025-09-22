@@ -1,7 +1,7 @@
 import { memo } from 'react'
 
 import { ensureReadableText } from '@/lib/colour'
-import { getPlannerIconComponent } from '@/lib/icons'
+import { resolvePlannerIconMeta } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import type { PlannerItem, Project } from '@/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -18,8 +18,11 @@ const SquareCardBase = ({ item, project, isSelected, onActivate, size }: SquareC
   const background = project?.colour ?? '#888888'
   const textColour = ensureReadableText(background)
   const projectName = project?.name ?? 'Project'
-  const Icon = getPlannerIconComponent(item.icon)
+  const { component: Icon, label: iconLabel } = resolvePlannerIconMeta(item)
   const iconSize = Math.max(10, Math.min(22, size * 0.6))
+  const accessibleLabel = iconLabel
+    ? `${projectName}: ${item.title}, ${iconLabel}`
+    : `${projectName}: ${item.title}`
 
   return (
     <Tooltip>
@@ -36,7 +39,7 @@ const SquareCardBase = ({ item, project, isSelected, onActivate, size }: SquareC
             width: `${size}px`,
             height: `${size}px`,
           }}
-          aria-label={`${projectName}: ${item.title}`}
+          aria-label={accessibleLabel}
           aria-haspopup="dialog"
           data-prevent-day-open="true"
           onClick={(event) => {
@@ -45,14 +48,22 @@ const SquareCardBase = ({ item, project, isSelected, onActivate, size }: SquareC
           }}
           onDoubleClick={(event) => event.stopPropagation()}
         >
-          <span className="sr-only">{item.title}</span>
-          {Icon && <Icon className="pointer-events-none" size={iconSize} />}
+          <span className="sr-only">{accessibleLabel}</span>
+          {Icon && (
+            <Icon
+              data-testid="square-card-icon"
+              className="pointer-events-none"
+              size={iconSize}
+              {...(iconLabel ? { 'aria-label': iconLabel, role: 'img' } : { 'aria-hidden': true })}
+            />
+          )}
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">
         <div className="flex flex-col gap-1 text-left">
           <p className="text-sm font-medium">{item.title}</p>
           <p className="text-xs text-muted-foreground">{projectName}</p>
+          {iconLabel && <p className="text-xs text-muted-foreground">Icon: {iconLabel}</p>}
           {item.assignee && <p className="text-xs">Assigned to {item.assignee}</p>}
         </div>
       </TooltipContent>

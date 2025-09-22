@@ -1,15 +1,30 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { usePlannerStore } from '@/store/plannerStore'
 import { deriveColour, ensureReadableText } from '@/lib/colour'
-import { PLANNER_ICONS, getPlannerIconComponent } from '@/lib/icons'
+import {
+  PLANNER_ICONS,
+  PLANNER_CUSTOM_ICON_COLLECTION,
+  getPlannerCustomIconComponent,
+  getPlannerCustomIconDefinition,
+  resolvePlannerIconMeta,
+} from '@/lib/icons'
 import { formatISODate, normaliseTitle } from '@/lib/string'
+import { cn } from '@/lib/utils'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 export type EditDrawerProps = {
   open: boolean
@@ -25,6 +40,10 @@ type Draft = {
   date: string
   assignee: string
   icon: string | null
+  iconCustom: {
+    key: string
+    label: string
+  } | null
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -34,6 +53,7 @@ const EMPTY_DRAFT: Draft = {
   date: formatISODate(new Date()),
   assignee: '',
   icon: null,
+  iconCustom: null,
 }
 
 export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
@@ -53,9 +73,31 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   const [newProjectColour, setNewProjectColour] = useState('#1C7ED6')
   const [newProjectColourDirty, setNewProjectColourDirty] = useState(false)
   const [projectError, setProjectError] = useState('')
+  const [isCustomIconDialogOpen, setCustomIconDialogOpen] = useState(false)
+
+  const initialisedRef = useRef<{ mode: 'existing' | 'new' | null; itemId: string | null; version: string | null }>(
+    { mode: null, itemId: null, version: null },
+  )
 
   useEffect(() => {
+    if (!open) {
+      initialisedRef.current = { mode: null, itemId: null, version: null }
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+
     if (currentItem) {
+      const version = currentItem.updatedAt ?? ''
+      if (
+        initialisedRef.current.mode === 'existing' &&
+        initialisedRef.current.itemId === currentItem.id &&
+        initialisedRef.current.version === version
+      ) {
+        return
+      }
+
       setDraft({
         projectId: currentItem.projectId,
         title: currentItem.title,
@@ -63,22 +105,32 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
         date: currentItem.date,
         assignee: currentItem.assignee ?? '',
         icon: currentItem.icon ?? null,
+        iconCustom: currentItem.iconCustom ?? null,
       })
+      initialisedRef.current = { mode: 'existing', itemId: currentItem.id, version }
       setCreatingProject(false)
       setProjectError('')
-    } else if (open) {
-      const defaultProject = projects[0]?.id ?? null
-      setDraft((prev) => ({
-        projectId: defaultProject,
-        title: '',
-        notes: '',
-        date: date ?? prev.date,
-        assignee: '',
-        icon: null,
-      }))
-      setCreatingProject(false)
-      setProjectError('')
+      return
     }
+
+    if (initialisedRef.current.mode === 'new') {
+      return
+    }
+
+    const defaultProject = projects[0]?.id ?? null
+    const initialDate = date ?? formatISODate(new Date())
+    setDraft({
+      projectId: defaultProject,
+      title: '',
+      notes: '',
+      date: initialDate,
+      assignee: '',
+      icon: null,
+      iconCustom: null,
+    })
+    initialisedRef.current = { mode: 'new', itemId: null, version: null }
+    setCreatingProject(false)
+    setProjectError('')
   }, [currentItem, date, open, projects])
 
   useEffect(() => {
@@ -91,7 +143,23 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   const selectedProject = projects.find((project) => project.id === draft.projectId) ?? null
   const previewColour = selectedProject?.colour ?? '#888888'
   const previewText = ensureReadableText(previewColour)
-  const IconPreview = getPlannerIconComponent(draft.icon ?? undefined)
+  const resolvedIcon = resolvePlannerIconMeta(draft)
+  const IconPreview = resolvedIcon.component
+  const iconAccessibleName = resolvedIcon.label ?? undefined
+  const iconSelectValue = (() => {
+    if (draft.icon) return draft.icon
+    if (draft.iconCustom) return `custom:${draft.iconCustom.key}`
+    return 'none'
+  })()
+  const CustomSummaryIcon = draft.iconCustom
+    ? getPlannerCustomIconComponent(draft.iconCustom.key)
+    : null
+
+  useEffect(() => {
+    // TEMP: debug state propagation
+    // eslint-disable-next-line no-console
+    console.log('draft.iconCustom changed', draft.iconCustom)
+  }, [draft.iconCustom])
 
   const handleSubmit = () => {
     if (!draft.projectId) {
@@ -105,6 +173,17 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
       return
     }
 
+    const iconCustom = (() => {
+      const candidate = draft.iconCustom
+      if (!candidate) return undefined
+      const key = candidate.key?.trim()
+      if (!key) return undefined
+      const label = candidate.label?.trim() || key
+      return { key, label }
+    })()
+
+    // eslint-disable-next-line no-console
+    console.log('submit.upsert.input', { draft, iconCustom })
     upsertItem({
       id: currentItem?.id,
       projectId: draft.projectId,
@@ -112,7 +191,8 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
       notes: draft.notes.trim() || undefined,
       date: draft.date,
       assignee: draft.assignee.trim() || undefined,
-      icon: draft.icon ?? undefined,
+      icon: iconCustom ? undefined : draft.icon ?? undefined,
+      iconCustom,
     })
 
     onClose()
@@ -132,6 +212,71 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
     setNewProjectColour('#1C7ED6')
     setNewProjectColourDirty(false)
     setProjectError('')
+  }
+
+  const handleIconSelect = (value: string) => {
+    // eslint-disable-next-line no-console
+    console.log('iconSelect.change', value)
+    if (!value) {
+      // Ignore spurious empty value emissions from Radix/native select sync
+      return
+    }
+    if (value === '__choose__') {
+      setCustomIconDialogOpen(true)
+      return
+    }
+    if (value === 'none') {
+      setDraft((prev) => ({ ...prev, icon: null, iconCustom: null }))
+      return
+    }
+    if (value.startsWith('custom:')) {
+      const key = value.slice('custom:'.length)
+      if (!key) {
+        setCustomIconDialogOpen(true)
+        return
+      }
+      setDraft((prev) => {
+        if (prev.iconCustom?.key === key) {
+          return prev
+        }
+        const definition = getPlannerCustomIconDefinition(key)
+        return {
+          ...prev,
+          icon: null,
+          iconCustom: {
+            key,
+            label: definition?.label ?? key,
+          },
+        }
+      })
+      return
+    }
+    setDraft((prev) => ({ ...prev, icon: value, iconCustom: null }))
+  }
+
+  const iconTriggerRef = useRef<HTMLButtonElement | null>(null)
+
+  const handleCustomIconApply = (selection: { key: string; label: string }) => {
+    // TEMP: debug test flow
+    // eslint-disable-next-line no-console
+    console.log('handleCustomIconApply', selection)
+    setDraft((prev) => {
+      // eslint-disable-next-line no-console
+      console.log('setDraft apply prev.iconCustom -> next', prev.iconCustom, selection)
+      return { ...prev, icon: null, iconCustom: selection }
+    })
+    setCustomIconDialogOpen(false)
+    window.requestAnimationFrame(() => {
+      iconTriggerRef.current?.focus()
+    })
+  }
+
+  const handleCustomIconCancel = () => {
+    setCustomIconDialogOpen(false)
+  }
+
+  const handleClearCustomIcon = () => {
+    setDraft((prev) => ({ ...prev, icon: null, iconCustom: null }))
   }
 
   const handleProjectSelect = (value: string) => {
@@ -166,11 +311,10 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
     resetNewProjectFields()
   }
 
-  const iconDefinition = draft.icon ? PLANNER_ICONS.find((entry) => entry.value === draft.icon) : null
-
   return (
-    <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
-      <SheetContent>
+    <>
+      <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
+        <SheetContent>
         <SheetHeader>
           <SheetTitle>{currentItem ? 'Edit item' : 'Add item'}</SheetTitle>
         </SheetHeader>
@@ -258,26 +402,83 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="icon">Icon</Label>
-            <Select value={draft.icon ?? 'none'} onValueChange={(value) => setDraft((prev) => ({ ...prev, icon: value === 'none' ? null : value }))}>
-              <SelectTrigger id="icon" className="flex items-center gap-2">
-                {iconDefinition && <iconDefinition.icon className="h-4 w-4" />}
-                <SelectValue placeholder="None" />
+            <Select value={iconSelectValue} onValueChange={handleIconSelect}>
+              <SelectTrigger id="icon" ref={iconTriggerRef}>
+                <span className="flex w-full items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    {IconPreview && (
+                      <IconPreview
+                        className="h-4 w-4"
+                        {...(iconAccessibleName ? { 'aria-label': iconAccessibleName, role: 'img' } : { 'aria-hidden': true })}
+                      />
+                    )}
+                    <span className="text-sm font-medium" data-testid="icon-summary-label">{resolvedIcon.label ?? 'None'}</span>
+                  </span>
+                  <SelectValue className="sr-only" placeholder="None" />
+                </span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
+                <SelectSeparator />
                 {PLANNER_ICONS.map((entry) => {
                   const IconComponent = entry.icon
                   return (
                     <SelectItem key={entry.value} value={entry.value}>
                       <span className="flex items-center gap-2">
-                        <IconComponent className="h-4 w-4" />
+                        <IconComponent className="h-4 w-4" aria-hidden="true" />
                         {entry.label}
                       </span>
                     </SelectItem>
                   )
                 })}
+                {draft.iconCustom && (
+                  <>
+                    <SelectSeparator />
+                    <SelectItem value={`custom:${draft.iconCustom.key}`}>
+                      <span className="flex items-center gap-2">
+                        {CustomSummaryIcon && (
+                          <CustomSummaryIcon
+                            className="h-4 w-4"
+                            {...(draft.iconCustom.label
+                              ? { 'aria-label': draft.iconCustom.label, role: 'img' }
+                              : { 'aria-hidden': true })}
+                          />
+                        )}
+                        Custom icon: {draft.iconCustom.label}
+                      </span>
+                    </SelectItem>
+                  </>
+                )}
+                <SelectSeparator />
+                <SelectItem value="__choose__" data-testid="choose-custom-icon">Choose from collection…</SelectItem>
               </SelectContent>
             </Select>
+            {draft.iconCustom && (
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 p-3 text-sm">
+                <div className="flex items-center gap-3">
+                  {CustomSummaryIcon && (
+                    <CustomSummaryIcon
+                      className="h-5 w-5"
+                      {...(draft.iconCustom.label
+                        ? { 'aria-label': draft.iconCustom.label, role: 'img' }
+                        : { 'aria-hidden': true })}
+                    />
+                  )}
+                  <div className="flex flex-col">
+                    <span className="font-medium">{draft.iconCustom.label}</span>
+                    <span className="text-xs text-muted-foreground">Custom icon from collection</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button type="button" size="sm" variant="outline" onClick={() => setCustomIconDialogOpen(true)}>
+                    Change…
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={handleClearCustomIcon}>
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex gap-4">
             <div className="flex-1 space-y-2">
@@ -307,7 +508,13 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-md border"
                 style={{ backgroundColor: previewColour, color: previewText }}
               >
-                {IconPreview && <IconPreview className="h-4 w-4" size={16} />}
+                {IconPreview && (
+                  <IconPreview
+                    className="h-4 w-4"
+                    size={16}
+                    {...(iconAccessibleName ? { 'aria-label': iconAccessibleName, role: 'img' } : { 'aria-hidden': true })}
+                  />
+                )}
                 <span>{selectedProject ? selectedProject.name : 'Select a project'}</span>
               </div>
             </div>
@@ -330,7 +537,135 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
             </div>
           </SheetFooter>
         </form>
-      </SheetContent>
-    </Sheet>
+        </SheetContent>
+      </Sheet>
+      <CustomIconDialog
+        open={isCustomIconDialogOpen}
+        initialValue={draft.iconCustom}
+        onCancel={handleCustomIconCancel}
+        onConfirm={handleCustomIconApply}
+      />
+    </>
+  )
+}
+
+type CustomIconDialogProps = {
+  open: boolean
+  initialValue: {
+    key: string
+    label: string
+  } | null
+  onCancel: () => void
+  onConfirm: (value: { key: string; label: string }) => void
+}
+
+function CustomIconDialog({ open, initialValue, onCancel, onConfirm }: CustomIconDialogProps) {
+  const [selectedKey, setSelectedKey] = useState<string>(() => initialValue?.key ?? PLANNER_CUSTOM_ICON_COLLECTION[0]?.key ?? '')
+  const [label, setLabel] = useState<string>(() => initialValue?.label ?? PLANNER_CUSTOM_ICON_COLLECTION[0]?.label ?? '')
+  const [labelDirty, setLabelDirty] = useState(false)
+  const descriptionId = useId()
+
+  useEffect(() => {
+    if (!open) return
+    // eslint-disable-next-line no-console
+    console.log('customDialog.open', true)
+    const fallbackKey = PLANNER_CUSTOM_ICON_COLLECTION[0]?.key ?? ''
+    const nextKey = initialValue?.key ?? fallbackKey
+    setSelectedKey(nextKey)
+    const definition = getPlannerCustomIconDefinition(nextKey)
+    const defaultLabel = definition?.label ?? nextKey
+    const providedLabel = initialValue?.label ?? ''
+    setLabel(providedLabel || defaultLabel)
+    setLabelDirty(initialValue ? providedLabel.trim() !== defaultLabel : false)
+  }, [initialValue, open])
+
+  const definition = useMemo(() => getPlannerCustomIconDefinition(selectedKey), [selectedKey])
+  const IconComponent = definition?.icon ?? null
+
+  const handleSelect = (key: string) => {
+    // eslint-disable-next-line no-console
+    console.log('customDialog.select', key)
+    setSelectedKey(key)
+    const nextDefinition = getPlannerCustomIconDefinition(key)
+    if (!labelDirty) {
+      setLabel(nextDefinition?.label ?? key)
+    }
+  }
+
+  const handleConfirm = () => {
+    if (!selectedKey) {
+      onCancel()
+      return
+    }
+    const activeDefinition = getPlannerCustomIconDefinition(selectedKey)
+    const trimmed = label.trim() || activeDefinition?.label || selectedKey
+    // eslint-disable-next-line no-console
+    console.log('customDialog.confirm', { key: selectedKey, label: trimmed })
+    onConfirm({ key: selectedKey, label: trimmed })
+  }
+
+  if (PLANNER_CUSTOM_ICON_COLLECTION.length === 0) {
+    return null
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => (!next ? onCancel() : undefined)}>
+      <DialogContent className="max-w-md" aria-describedby={descriptionId} data-testid="custom-icon-dialog">
+        <DialogHeader>
+          <DialogTitle>Choose an icon</DialogTitle>
+          <DialogDescription id={descriptionId}>Select from the collection and give it a display name.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+            {PLANNER_CUSTOM_ICON_COLLECTION.map((entry) => {
+              const Icon = entry.icon
+              const isSelected = entry.key === selectedKey
+              return (
+                <button
+                  key={entry.key}
+                  type="button"
+                  className={cn(
+                    'flex flex-col items-center gap-2 rounded-md border p-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-muted bg-background',
+                  )}
+                  onClick={() => handleSelect(entry.key)}
+                  aria-pressed={isSelected}
+                  aria-label={entry.label}
+                >
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                  <span>{entry.label}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="custom-icon-label">Display name</Label>
+            <Input
+              id="custom-icon-label"
+              value={label}
+              onChange={(event) => {
+                setLabel(event.target.value)
+                setLabelDirty(true)
+              }}
+              placeholder="Icon name"
+            />
+          </div>
+          {IconComponent && (
+            <div className="flex items-center gap-3 rounded-md border bg-muted/40 p-3 text-sm">
+              <IconComponent className="h-6 w-6" aria-hidden="true" />
+              <span>{label.trim() || definition?.label || selectedKey}</span>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={handleConfirm} data-testid="custom-icon-use">
+            Use icon
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

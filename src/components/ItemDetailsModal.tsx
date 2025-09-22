@@ -13,7 +13,7 @@ import {
 import { NotesContent } from '@/components/NotesContent'
 import { ensureReadableText } from '@/lib/colour'
 import { formatDate } from '@/lib/date'
-import { getPlannerIconComponent, PLANNER_ICONS } from '@/lib/icons'
+import { resolvePlannerIconMeta } from '@/lib/icons'
 import type { PlannerItem, Project } from '@/types'
 
 export type ItemDetailsModalProps = {
@@ -28,11 +28,11 @@ export type ItemDetailsModalProps = {
 export function ItemDetailsModal({ open, item, project, onClose, onEdit, onDelete }: ItemDetailsModalProps) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
 
-  const iconMeta = useMemo(
-    () => (item?.icon ? PLANNER_ICONS.find((entry) => entry.value === item.icon) ?? null : null),
-    [item?.icon],
+  const resolvedIcon = useMemo(
+    () => (item ? resolvePlannerIconMeta(item) : { component: null, label: null, source: null }),
+    [item],
   )
-  const Icon = iconMeta ? getPlannerIconComponent(iconMeta.value) : null
+  const Icon = resolvedIcon.component
   const projectInitial = project?.name?.charAt(0) ?? '?'
   const swatchText = ensureReadableText(project?.colour ?? '#888888')
 
@@ -96,10 +96,13 @@ export function ItemDetailsModal({ open, item, project, onClose, onEdit, onDelet
               </div>
               <div className="flex flex-col gap-1 text-sm text-muted-foreground">
                 {item.assignee && <span>Assigned to {item.assignee}</span>}
-                {Icon && iconMeta && (
+                {Icon && (
                   <span className="inline-flex items-center gap-1 text-foreground">
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                    <span className="text-sm font-medium">{iconMeta.label}</span>
+                    <Icon
+                      className="h-4 w-4"
+                      {...(resolvedIcon.label ? { 'aria-label': resolvedIcon.label, role: 'img' } : { 'aria-hidden': true })}
+                    />
+                    <span className="text-sm font-medium">{resolvedIcon.label ?? 'Icon'}</span>
                   </span>
                 )}
               </div>
@@ -149,6 +152,10 @@ function buildCopySummary(item: PlannerItem, project: Project | null) {
   parts.push(`Title: ${item.title}`)
   parts.push(`Project: ${project?.name ?? 'Untitled project'}`)
   parts.push(`Date: ${formatDate(item.date, 'EEE d MMM yyyy')}`)
+  const iconMeta = resolvePlannerIconMeta(item)
+  if (iconMeta.label) {
+    parts.push(`Icon: ${iconMeta.label}`)
+  }
   if (item.assignee) {
     parts.push(`Assignee: ${item.assignee}`)
   }

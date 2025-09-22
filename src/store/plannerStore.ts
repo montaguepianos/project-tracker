@@ -125,6 +125,10 @@ type LegacyItem = {
   assignee?: string
   colour?: string
   icon?: string
+  iconCustom?: {
+    key?: string
+    label?: string
+  }
   createdAt?: string
   updatedAt?: string
 }
@@ -350,6 +354,15 @@ export const usePlannerStore = create<PlannerStore>()(
           const id = input.id ?? nanoid()
           const existing = getState().items.find((item) => item.id === id)
 
+          const rawCustomKey = input.iconCustom?.key?.trim()
+          const customLabel = input.iconCustom?.label?.trim()
+          const hasCustomIcon = !!rawCustomKey
+          const normalisedIcon = (() => {
+            if (hasCustomIcon) return undefined
+            const candidate = typeof input.icon === 'string' ? input.icon.trim() : undefined
+            return candidate ? candidate : undefined
+          })()
+
           const nextItem: PlannerItem = {
             id,
             projectId: input.projectId,
@@ -357,7 +370,13 @@ export const usePlannerStore = create<PlannerStore>()(
             notes: input.notes,
             date: input.date,
             assignee: input.assignee,
-            icon: input.icon,
+            icon: normalisedIcon,
+            iconCustom: hasCustomIcon
+              ? {
+                  key: rawCustomKey as string,
+                  label: customLabel || (rawCustomKey as string),
+                }
+              : undefined,
             createdAt: existing?.createdAt ?? now,
             updatedAt: now,
           }
@@ -435,6 +454,17 @@ export const usePlannerStore = create<PlannerStore>()(
               const project = ensureProject(projectName, raw.colour)
               const createdAt = typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString()
               const updatedAt = typeof raw.updatedAt === 'string' ? raw.updatedAt : createdAt
+              const customIcon = (() => {
+                const candidate = raw.iconCustom
+                if (!candidate || typeof candidate !== 'object') return undefined
+                const key = typeof candidate.key === 'string' ? candidate.key : undefined
+                if (!key) return undefined
+                const label =
+                  typeof candidate.label === 'string' && candidate.label.trim()
+                    ? candidate.label
+                    : key
+                return { key, label }
+              })()
               items.push({
                 id: raw.id ?? nanoid(),
                 projectId: project.id,
@@ -443,6 +473,7 @@ export const usePlannerStore = create<PlannerStore>()(
                 date: raw.date ?? formatISODate(new Date()),
                 assignee: raw.assignee,
                 icon: typeof raw.icon === 'string' ? raw.icon : undefined,
+                iconCustom: customIcon,
                 createdAt,
                 updatedAt,
               })

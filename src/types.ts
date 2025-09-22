@@ -14,6 +14,10 @@ export type PlannerItem = {
   date: string
   assignee?: string
   icon?: string
+  iconCustom?: {
+    key: string
+    label: string
+  }
   createdAt: string
   updatedAt: string
 }

@@ -10,7 +10,7 @@ import { formatISODate } from '@/lib/string'
 import { formatDate } from '@/lib/date'
 import { ensureReadableText } from '@/lib/colour'
 import { cn } from '@/lib/utils'
-import { getPlannerIconComponent, PLANNER_ICONS } from '@/lib/icons'
+import { resolvePlannerIconMeta } from '@/lib/icons'
 import type { PlannerItem, Project } from '@/types'
 
 export type DayViewProps = {
@@ -140,8 +140,9 @@ type DayViewItemProps = {
 function DayViewItem({ item, project, isSelected, onEdit, onDelete, onFocus }: DayViewItemProps) {
   const background = project?.colour ?? '#888888'
   const textColour = ensureReadableText(background)
-  const iconMeta = item.icon ? PLANNER_ICONS.find((entry) => entry.value === item.icon) ?? null : null
-  const Icon = getPlannerIconComponent(item.icon)
+  const resolvedIcon = resolvePlannerIconMeta(item)
+  const Icon = resolvedIcon.component
+  const iconLabel = resolvedIcon.label ?? 'Icon'
 
   return (
     <article
@@ -177,8 +178,11 @@ function DayViewItem({ item, project, isSelected, onEdit, onDelete, onFocus }: D
             <span>{formatDate(item.date, 'EEE d MMM yyyy')}</span>
             {Icon && (
               <span className="inline-flex items-center gap-1 text-foreground">
-                <Icon className="h-4 w-4" aria-hidden="true" />
-                <span className="text-sm font-medium">{iconMeta?.label ?? 'Icon'}</span>
+                <Icon
+                  className="h-4 w-4"
+                  {...(resolvedIcon.label ? { 'aria-label': resolvedIcon.label, role: 'img' } : { 'aria-hidden': true })}
+                />
+                <span className="text-sm font-medium">{iconLabel}</span>
               </span>
             )}
           </div>

@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
 import { useCallback, useMemo, useRef } from 'react'
-import { ChevronLeft, ChevronRight, Eye, FileDown, LayoutGrid, Printer, Rows3 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, FileDown, LayoutGrid, LogOut, Printer, Rows3 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/hooks/useAuth'
 import { FiltersBar } from '@/components/FiltersBar'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { usePlannerStore, getVisibleProjectIds } from '@/store/plannerStore'
@@ -36,6 +37,7 @@ const VIEW_LABELS: Record<PlannerView, string> = {
 const VIEW_ORDER: PlannerView[] = ['year', 'month', 'week', 'day']
 
 export function AppShell({ children, onAddItem, onStepHeading, canStepNext = true, canStepPrev = true }: AppShellProps) {
+  const { user, signOut, enabled } = useAuth()
   const view = usePlannerStore((state) => state.view)
   const referenceDate = usePlannerStore((state) => state.referenceDate)
   const setView = usePlannerStore((state) => state.setView)
@@ -145,6 +147,11 @@ export function AppShell({ children, onAddItem, onStepHeading, canStepNext = tru
                 </Button>
                 <Button onClick={onAddItem}>Add item</Button>
                 <ThemeToggle />
+                {enabled && user && (
+                  <Button variant="outline" size="icon" aria-label="Sign out" title="Sign out" onClick={signOut}>
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>

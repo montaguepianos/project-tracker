@@ -14,6 +14,8 @@ import { ItemDetailsModal } from '@/components/ItemDetailsModal'
 import { ItemDeleteDialog } from '@/components/ItemDeleteDialog'
 import { formatISODate } from '@/lib/string'
 import { clampToPlannerRange, getMonthRangeFor, getYearRangeFor, MIN_PLANNER_DATE, MAX_PLANNER_DATE } from '@/lib/date'
+import { useAllowedUser } from '@/hooks/useAllowedUser'
+import { SignIn } from '@/components/SignIn'
 
 function isEditableElement(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
@@ -23,6 +25,7 @@ function isEditableElement(target: EventTarget | null) {
 
 export default function App() {
   useUrlSync()
+  const { user, loading, enabled } = useAllowedUser()
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [drawerState, setDrawerState] = useState<{ open: boolean; itemId?: string | null; date?: string }>({
@@ -308,6 +311,18 @@ export default function App() {
     view === 'month' ? canStepPrevMonth : view === 'year' ? canStepPrevYear : undefined
   const headingCanNext =
     view === 'month' ? canStepNextMonth : view === 'year' ? canStepNextYear : undefined
+
+  if (enabled && loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <span className="text-sm text-muted-foreground">Loading…</span>
+      </div>
+    )
+  }
+
+  if (enabled && !user) {
+    return <SignIn />
+  }
 
   return (
     <AppShell

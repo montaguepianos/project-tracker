@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { createJSONStorage, devtools, persist } from 'zustand/middleware'
 import { del, get, set as idbSet } from 'idb-keyval'
 import { nanoid } from 'nanoid'
+import { isFirestoreOn, upsertProject as remoteUpsertProject, upsertItem as remoteUpsertItem, deleteItem as remoteDeleteItem } from '@/services/firestore'
+import { auth } from '@/services/firebase'
 
 import type { DateRangePreset, PlannerItem, PlannerView, Project } from '@/types'
 import { deriveColour } from '@/lib/colour'
@@ -46,6 +48,8 @@ type PlannerStore = {
   upsertItem: (input: Omit<PlannerItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => string
   deleteItem: (id: string) => void
   restoreLastDeleted: () => void
+  replaceProjects: (projects: Project[]) => void
+  replaceItems: (items: PlannerItem[]) => void
 }
 
 const storage = {
@@ -186,6 +190,12 @@ export const usePlannerStore = create<PlannerStore>()(
 
             return { filters: consistent }
           }),
+        replaceProjects: (projects) =>
+          set((state) => {
+            const filters = ensureFiltersConsistency(state.filters, projects)
+            return { projects, filters }
+          }),
+        replaceItems: (items) => set({ items }),
         toggleProjectVisibility: (projectId) =>
           set((state) => {
             const exists = state.projects.some((project) => project.id === projectId)
@@ -275,6 +285,8 @@ export const usePlannerStore = create<PlannerStore>()(
             updatedAt: now,
           }
 
+          // optimistic apply
+          const prev = getState().projects
           set((state) => {
             const projects = [...state.projects, project]
             const filters = ensureFiltersConsistency(state.filters, projects)
@@ -283,7 +295,15 @@ export const usePlannerStore = create<PlannerStore>()(
               filters,
             }
           })
-
+          // remote write
+          if (isFirestoreOn()) {
+            const uid = auth.currentUser?.uid ?? null
+            remoteUpsertProject(uid as string, project).catch((err) => {
+              console.error('[firestore] upsertProject', err)
+              // revert
+              set({ projects: prev })
+            })
+          }
           return project.id
         },
         updateProject: (id, { name, colour }) =>
@@ -303,11 +323,23 @@ export const usePlannerStore = create<PlannerStore>()(
             })
 
             const filters = ensureFiltersConsistency(state.filters, projects)
-            return {
+            const next = {
               projects,
               filters,
             }
+            // remote write
+            if (isFirestoreOn()) {
+              const uid = auth.currentUser?.uid ?? null
+              const updated = projects.find((p) => p.id === id)
+              if (updated) {
+                remoteUpsertProject(uid as string, updated).catch((err) => console.error('[firestore] updateProject', err))
+              }
+            }
+            return next
           }),
+        // Firestore side-effect for project updates
+        // Note: trigger after state is updated
+        // We piggy-back by observing auth and state in usePlannerSync; keep actions minimal
         deleteProject: (id, options) =>
           set((state) => {
             if (!state.projects.some((project) => project.id === id)) {
@@ -338,12 +370,19 @@ export const usePlannerStore = create<PlannerStore>()(
 
             const filters = ensureFiltersConsistency(state.filters, projects)
 
-            return {
+            const next = {
               projects,
               items,
               filters,
             }
+            if (isFirestoreOn()) {
+              const uid = auth.currentUser?.uid ?? null
+              remoteDeleteItem(uid as string, id).catch((err) => console.error('[firestore] deleteProject (items cascade not implemented)', err))
+            }
+            return next
           }),
+        // Firestore side-effect for project delete
+        // Trigger explicitly after state change for simplicity
         upsertItem: (input) => {
           const projectExists = getState().projects.some((project) => project.id === input.projectId)
           if (!projectExists) {
@@ -381,6 +420,7 @@ export const usePlannerStore = create<PlannerStore>()(
             updatedAt: now,
           }
 
+          const prevItems = getState().items
           set((state) => {
             const items = existing
               ? state.items.map((item) => (item.id === id ? nextItem : item))
@@ -391,7 +431,14 @@ export const usePlannerStore = create<PlannerStore>()(
               undo: null,
             }
           })
-
+          if (isFirestoreOn()) {
+            const uid = auth.currentUser?.uid ?? null
+            remoteUpsertItem(uid as string, nextItem).catch((err) => {
+              console.error('[firestore] upsertItem', err)
+              // revert
+              set({ items: prevItems })
+            })
+          }
           return id
         },
         deleteItem: (id) => {
@@ -402,6 +449,10 @@ export const usePlannerStore = create<PlannerStore>()(
             items: state.items.filter((item) => item.id !== id),
             undo: { item: target },
           }))
+          if (isFirestoreOn()) {
+            const uid = auth.currentUser?.uid ?? null
+            remoteDeleteItem(uid as string, id).catch((err) => console.error('[firestore] deleteItem', err))
+          }
         },
         restoreLastDeleted: () => {
           const undo = getState().undo

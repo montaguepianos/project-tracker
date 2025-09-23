@@ -196,11 +196,14 @@ export const usePlannerStore = create<PlannerStore>()(
             if (!exists) return state
 
             if (state.filters.projectFilterMode === 'all') {
+              // Treat chips as toggles: when all are visible, clicking one hides it
+              const allIds = state.projects.map((p) => p.id)
+              const nextIds = allIds.filter((id) => id !== projectId)
               return {
                 filters: {
                   ...state.filters,
                   projectFilterMode: 'include',
-                  projectIds: [projectId],
+                  projectIds: nextIds,
                 },
               }
             }

@@ -16,6 +16,7 @@ import {
   resolvePlannerIconMeta,
 } from '@/lib/icons'
 import { formatISODate, normaliseTitle } from '@/lib/string'
+import { parseYmdSafe } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import {
   Dialog,
@@ -74,6 +75,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   const [newProjectColourDirty, setNewProjectColourDirty] = useState(false)
   const [projectError, setProjectError] = useState('')
   const [isCustomIconDialogOpen, setCustomIconDialogOpen] = useState(false)
+  const [formError, setFormError] = useState('')
 
   const initialisedRef = useRef<{ mode: 'existing' | 'new' | null; itemId: string | null; version: string | null }>(
     { mode: null, itemId: null, version: null },
@@ -161,6 +163,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   }, [draft.iconCustom])
 
   const handleSubmit = () => {
+    setFormError('')
     if (!draft.projectId) {
       setProjectError('Choose a project')
       return
@@ -169,6 +172,13 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
     const title = normaliseTitle(draft.title)
     if (!title) {
       window.alert('Title is required.')
+      return
+    }
+
+    const selectedDate = draft.date || formatISODate(new Date())
+    const d = parseYmdSafe(selectedDate)
+    if (!d.ok) {
+      setFormError('Please choose a valid date.')
       return
     }
 
@@ -187,7 +197,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
       projectId: draft.projectId,
       title,
       notes: draft.notes.trim() || undefined,
-      date: draft.date,
+      date: d.value,
       assignee: draft.assignee.trim() || undefined,
       icon: iconCustom ? undefined : draft.icon ?? undefined,
       iconCustom,
@@ -485,6 +495,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
                 onChange={(event) => setDraft((prev) => ({ ...prev, date: event.target.value }))}
                 required
               />
+              {formError && <p className="text-xs text-destructive">{formError}</p>}
             </div>
             <div className="flex-1 space-y-2">
               <Label htmlFor="assignee">Assignee</Label>

@@ -134,3 +134,9 @@ export const WEEKDAY_LABELS = Array.from({ length: 7 }, (_, index) =>
 )
 
 export const MONTH_LABEL_FORMAT = 'MMMM yyyy'
+
+export function parseYmdSafe(ymd: string | null | undefined): { ok: true; value: string } | { ok: false } {
+  if (!ymd) return { ok: false }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return { ok: false }
+  return { ok: true, value: ymd }
+}

@@ -69,12 +69,12 @@ export function ProjectDeleteDialog({
       return 'Add an Archived project before deleting so existing items have somewhere to move.'
     }
     if (canDeleteWithoutReassign) {
-      return 'This action cannot be undone.'
+      return 'This will move the project to Archived. This action cannot be undone.'
     }
     if (itemCount === 1) {
-      return 'This project contains 1 item. Items will be moved to Archived when you delete the project.'
+      return 'This project contains 1 item. It will be moved to “Archived” when you delete the project.'
     }
-    return `This project contains ${itemCount} items. Items will be moved to Archived when you delete the project.`
+    return `This project contains ${itemCount} items. They will be moved to “Archived” when you delete the project.`
   })()
 
   return (

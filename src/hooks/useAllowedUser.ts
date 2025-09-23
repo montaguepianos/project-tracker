@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-
 import { useAuth } from '@/hooks/useAuth'
+import { ensureSystemProjects } from '@/services/systemProjects'
 
 const ALLOWED_EMAILS = [
   'leilaelizabethchapman@gmail.com',
@@ -28,7 +28,10 @@ export function useAllowedUser() {
     const allowed = ALLOWED_EMAILS.includes(email)
 
     if (allowed) {
-      setVerified(true)
+      // Ensure system projects exist before we consider the user verified
+      ensureSystemProjects(user.uid)
+        .catch(() => {})
+        .finally(() => setVerified(true))
       return
     }
 

@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { initPersistence } from '@/services/db';
+import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 
 const cfg = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -27,4 +26,6 @@ export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
 
 // Best-effort offline cache
-initPersistence();
+enableIndexedDbPersistence(db).catch(() => {
+  // ignore if multiple tabs etc.
+});

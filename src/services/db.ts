@@ -3,8 +3,14 @@ import {
   deleteDoc,
   doc,
   enableIndexedDbPersistence,
+  getDocs,
+  limit,
+  getFirestore,
+  query,
   serverTimestamp,
   setDoc,
+  where,
+  writeBatch,
   type CollectionReference,
 } from 'firebase/firestore'
 
@@ -12,11 +18,9 @@ import type { PlannerItem, Project } from '@/types'
 import { db } from '@/services/firebase'
 
 export function initPersistence() {
-  try {
-    // Best-effort offline cache; ignore multi-tab/unsupported errors
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    enableIndexedDbPersistence(db).catch(() => {})
-  } catch {}
+  // Best-effort offline cache; ignore multi-tab/unsupported errors
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  enableIndexedDbPersistence(db).catch(() => {})
 }
 
 export function getUserRefs(uid: string) {
@@ -26,13 +30,32 @@ export function getUserRefs(uid: string) {
   return { projectsCol, itemsCol }
 }
 
+export async function ensureSystemProjects(uid: string) {
+  const { projectsCol } = getUserRefs(uid)
+  const ensure = async (id: string, name: string) => {
+    const ref = doc(projectsCol, id)
+    const snap = await getDocs(query(projectsCol, where('id', '==', id)))
+    if (!snap.empty) return
+    await setDoc(ref, {
+      id,
+      name,
+      color: name.toLowerCase() === 'archived' ? '#6B7280' : '#1C7ED6',
+      system: true,
+      kind: name.toLowerCase() === 'archived' ? 'archived' : 'default',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  }
+  await Promise.all([ensure('sys-general', 'General'), ensure('sys-archived', 'Archived')])
+}
+
 export async function upsertProject(uid: string, project: Project) {
   const { projectsCol } = getUserRefs(uid)
   const ref = doc(projectsCol, project.id)
   const payload: any = {
     id: project.id,
     name: project.name,
-    color: project.colour, // map to Firestore 'color'
+    color: project.colour,
     updatedAt: serverTimestamp(),
   }
   if (!project.createdAt) payload.createdAt = serverTimestamp()
@@ -67,6 +90,25 @@ export async function deleteItem(uid: string, itemId: string) {
   const { itemsCol } = getUserRefs(uid)
   const ref = doc(itemsCol, itemId)
   await deleteDoc(ref)
+}
+
+export async function moveProjectToArchived(uid: string, projectId: string, archivedProjectId: string) {
+  const { projectsCol, itemsCol } = getUserRefs(uid)
+  const max = 400
+  // page until empty
+  // Firestore has no offset; re-query each time
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const snap = await getDocs(query(itemsCol, where('projectId', '==', projectId), limit(max)))
+    if (snap.empty) break
+    const batch = writeBatch(getFirestore())
+    snap.forEach((d) => {
+      batch.update(d.ref, { projectId: archivedProjectId, updatedAt: serverTimestamp() })
+    })
+    await batch.commit()
+    if (snap.size < max) break
+  }
+  await deleteDoc(doc(projectsCol, projectId))
 }
 
 

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
-import * as plannerSync from '@/services/plannerSync'
 
 import { auth, googleProvider, firebaseEnabled } from '@/services/firebase'
 
@@ -14,7 +13,6 @@ export function useAuth() {
       setLoading(false)
       return
     }
-
     const unsub = onAuthStateChanged(auth, (next) => {
       setUser(next)
       setLoading(false)
@@ -23,19 +21,12 @@ export function useAuth() {
   }, [])
 
   const uid = useMemo(() => user?.uid ?? null, [user])
-  useEffect(() => {
-    if (!uid) {
-      plannerSync.stop()
-      return
-    }
-    plannerSync.start(uid)
-    return () => plannerSync.stop()
-  }, [uid])
 
   return {
     user,
     uid,
     loading,
+    enabled: firebaseEnabled,
     signInWithGoogle: async () => {
       if (!firebaseEnabled) return
       await signInWithPopup(auth, googleProvider)
@@ -44,7 +35,6 @@ export function useAuth() {
       if (!firebaseEnabled) return
       await signOut(auth)
     },
-    enabled: firebaseEnabled,
   }
 }
 

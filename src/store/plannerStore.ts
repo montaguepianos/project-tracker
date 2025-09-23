@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, devtools, persist } from 'zustand/middleware'
 import { del, get, set as idbSet } from 'idb-keyval'
 import { nanoid } from 'nanoid'
-import { firebaseEnabled } from '@/services/firebase'
+import { firebaseEnabled, auth } from '@/services/firebase'
 import { upsertItem as remoteUpsertItem, deleteItem as remoteDeleteItem, moveProjectToArchived } from '@/services/db'
 
 import type { DateRangePreset, PlannerItem, PlannerView, Project } from '@/types'
@@ -348,16 +348,29 @@ export const usePlannerStore = create<PlannerStore>()(
               filters,
             }
             // Firestore persist move to archived if enabled
-            if (firebaseEnabled && reassignment) {
-              const uid = null
+            if (firebaseEnabled && reassignment && auth.currentUser?.uid) {
+              const uid = auth.currentUser.uid
               // eslint-disable-next-line @typescript-eslint/no-floating-promises
-              moveProjectToArchived(uid as unknown as string, id, reassignment).catch((err) => {
+              moveProjectToArchived(uid, id, reassignment).catch((err) => {
                 console.error('[firestore] moveProjectToArchived', err)
               })
             }
             return nextState
           }),
         upsertItem: (input) => {
+          if (!input || typeof input !== 'object') {
+            console.error('upsertItem: invalid payload')
+            return ''
+          }
+          if (!input.projectId) {
+            console.error('upsertItem: missing projectId')
+            return ''
+          }
+          if (!input.date || typeof input.date !== 'string') {
+            console.error('upsertItem: invalid date', (input as any)?.date)
+            return ''
+          }
+
           const projectExists = getState().projects.some((project) => project.id === input.projectId)
           if (!projectExists) {
             throw new Error('Project does not exist for item')
@@ -367,8 +380,8 @@ export const usePlannerStore = create<PlannerStore>()(
           const id = input.id ?? nanoid()
           const existing = getState().items.find((item) => item.id === id)
 
-          const rawCustomKey = input.iconCustom?.key?.trim()
-          const customLabel = input.iconCustom?.label?.trim()
+          const rawCustomKey = typeof input.iconCustom?.key === 'string' ? input.iconCustom.key.trim() : undefined
+          const customLabel = typeof input.iconCustom?.label === 'string' ? input.iconCustom.label.trim() : undefined
           const hasCustomIcon = !!rawCustomKey
 
           const nextItem: PlannerItem = {
@@ -378,7 +391,7 @@ export const usePlannerStore = create<PlannerStore>()(
             notes: input.notes,
             date: input.date,
             assignee: input.assignee,
-            icon: hasCustomIcon ? undefined : input.icon,
+            icon: hasCustomIcon ? undefined : (typeof input.icon === 'string' ? input.icon : undefined),
             iconCustom: hasCustomIcon
               ? {
                   key: rawCustomKey as string,
@@ -401,9 +414,9 @@ export const usePlannerStore = create<PlannerStore>()(
             }
           })
 
-          if (firebaseEnabled) {
-            const uid = null
-            remoteUpsertItem(uid as unknown as string, nextItem).catch((err) => {
+          if (firebaseEnabled && auth.currentUser?.uid) {
+            const uid = auth.currentUser.uid
+            remoteUpsertItem(uid, nextItem).catch((err) => {
               console.error('[firestore] upsertItem', err)
               set({ items: prevItems })
             })
@@ -418,9 +431,9 @@ export const usePlannerStore = create<PlannerStore>()(
             items: state.items.filter((item) => item.id !== id),
             undo: { item: target },
           }))
-          if (firebaseEnabled) {
-            const uid = null
-            remoteDeleteItem(uid as unknown as string, id).catch((err) => console.error('[firestore] deleteItem', err))
+          if (firebaseEnabled && auth.currentUser?.uid) {
+            const uid = auth.currentUser.uid
+            remoteDeleteItem(uid, id).catch((err) => console.error('[firestore] deleteItem', err))
           }
         },
         restoreLastDeleted: () => {

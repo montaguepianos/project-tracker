@@ -138,5 +138,14 @@ export const MONTH_LABEL_FORMAT = 'MMMM yyyy'
 export function parseYmdSafe(ymd: string | null | undefined): { ok: true; value: string } | { ok: false } {
   if (!ymd) return { ok: false }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return { ok: false }
-  return { ok: true, value: ymd }
+  // Validate by parsing and re-formatting
+  try {
+    const parsed = parseISO(ymd)
+    if (Number.isNaN(parsed.getTime())) return { ok: false }
+    const roundTrip = format(parsed, 'yyyy-MM-dd')
+    if (roundTrip !== ymd) return { ok: false }
+    return { ok: true, value: ymd }
+  } catch {
+    return { ok: false }
+  }
 }

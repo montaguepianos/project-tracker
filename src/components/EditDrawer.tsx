@@ -76,6 +76,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   const [projectError, setProjectError] = useState('')
   const [isCustomIconDialogOpen, setCustomIconDialogOpen] = useState(false)
   const [formError, setFormError] = useState('')
+  const [titleError, setTitleError] = useState('')
 
   const initialisedRef = useRef<{ mode: 'existing' | 'new' | null; itemId: string | null; version: string | null }>(
     { mode: null, itemId: null, version: null },
@@ -171,7 +172,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
 
     const title = normaliseTitle(draft.title)
     if (!title) {
-      window.alert('Title is required.')
+      setTitleError('Please add a title.')
       return
     }
 
@@ -395,6 +396,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
               required
               placeholder="Homepage hero"
             />
+            {titleError && <p className="text-xs text-destructive">{titleError}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>

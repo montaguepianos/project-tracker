@@ -2,7 +2,7 @@ import { collection, doc, getDoc, setDoc, serverTimestamp, type CollectionRefere
 
 import { db, firebaseEnabled } from '@/services/firebase'
 
-export const SYS = { generalId: 'sys-general', archivedId: 'sys-archived' } as const
+export const SYS = { archivedId: 'sys-archived' } as const
 
 function getProjectsCol(uid: string) {
   const base = doc(db, 'users', uid)
@@ -11,33 +11,28 @@ function getProjectsCol(uid: string) {
 
 export async function ensureSystemProjects(uid: string | null | undefined) {
   if (!firebaseEnabled || !uid) return
-  const { generalId, archivedId } = SYS
+  const { archivedId } = SYS
   const col = getProjectsCol(uid)
 
-  const ensure = async (id: string, name: string, kind: 'default' | 'archived') => {
+  const ensure = async (id: string, name: string) => {
     const ref = doc(col, id)
     const snap = await getDoc(ref)
     if (snap.exists()) return
     await setDoc(ref, {
       id,
       name,
-      color: kind === 'archived' ? '#6B7280' : '#1C7ED6',
+      color: '#6B7280',
       system: true,
-      kind,
+      kind: 'archived',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
   }
 
-  await Promise.all([
-    ensure(generalId, 'General', 'default'),
-    ensure(archivedId, 'Archived', 'archived'),
-  ])
+  await ensure(archivedId, 'Archived')
 }
 
 export function getArchivedProjectId(): string | null {
   if (!firebaseEnabled) return null
   return SYS.archivedId
 }
-
-

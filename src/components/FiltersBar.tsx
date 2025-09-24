@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 import type { PlannerItem, PlannerView, Project } from '@/types'
 import { deriveColour } from '@/lib/colour'
 import { ProjectDeleteDialog } from '@/components/ProjectDeleteDialog'
+import { SYS } from '@/services/systemProjects'
 
 const PRESETS = [
   { value: 'this-week', label: 'This week' },
@@ -40,6 +41,12 @@ export function FiltersBar() {
   const filters = usePlannerStore((state) => state.filters)
   const setFilters = usePlannerStore((state) => state.setFilters)
   const projects = usePlannerStore((state) => state.projects)
+  const uiProjects = useMemo(() => {
+    const archivedId = SYS.archivedId
+    const archived = projects.find((project) => project.id === archivedId)
+    const others = projects.filter((project) => project.id !== archivedId)
+    return archived ? [...others, archived] : others
+  }, [projects])
   const toggleProjectVisibility = usePlannerStore((state) => state.toggleProjectVisibility)
   const selectAllProjects = usePlannerStore((state) => state.selectAllProjects)
   const clearProjectSelection = usePlannerStore((state) => state.clearProjectSelection)
@@ -132,7 +139,6 @@ export function FiltersBar() {
     }
   }
 
-  const visibleProjectIds = useMemo(() => getVisibleProjectIds(filters, projects), [filters, projects])
 
   const jumpValue = useMemo(() => {
     if (view === 'year') {
@@ -246,18 +252,14 @@ export function FiltersBar() {
     <div className="flex flex-wrap items-center gap-3 rounded-md border bg-card/40 p-3">
       <ProjectsPopover
         filters={filters}
-        projects={projects}
+        projects={uiProjects}
         itemsPerProject={itemsPerProject}
         toggleProjectVisibility={toggleProjectVisibility}
         selectAllProjects={selectAllProjects}
         clearProjectSelection={clearProjectSelection}
       />
 
-      <ColourLegend
-        projects={projects}
-        visibleProjectIds={visibleProjectIds}
-        toggleProjectVisibility={toggleProjectVisibility}
-      />
+      <ColourLegend projects={uiProjects} filters={filters} toggleProjectVisibility={toggleProjectVisibility} />
 
       <div className="flex flex-wrap items-center gap-2">
         <CalendarDays className="h-4 w-4 text-muted-foreground" />
@@ -449,10 +451,9 @@ function ProjectsPopover({
     setProjectPendingDelete(project)
   }
 
-  const handleConfirmDelete = (reassignTo?: string) => {
+  const handleConfirmDelete = () => {
     if (!projectPendingDelete) return
-    const options = reassignTo ? { reassignTo } : undefined
-    deleteProject(projectPendingDelete.id, options)
+    deleteProject(projectPendingDelete.id)
     setProjectPendingDelete(null)
   }
 
@@ -463,7 +464,10 @@ function ProjectsPopover({
   const pendingDeleteCount = projectPendingDelete ? itemsPerProject[projectPendingDelete.id] ?? 0 : 0
 
   const isProjectChecked = (projectId: string) => {
-    if (filters.projectFilterMode === 'all') return true
+    if (filters.projectFilterMode === 'all') {
+      // In 'all', non-archived are on, Archived is off
+      return projectId !== SYS.archivedId
+    }
     return filters.projectIds.includes(projectId)
   }
 
@@ -646,13 +650,13 @@ function JumpToDateControl({ view, value, onChange }: JumpToDateControlProps) {
 
 type ColourLegendProps = {
   projects: Project[]
-  visibleProjectIds: string[]
+  filters: Filters
   toggleProjectVisibility: (id: string) => void
 }
 
-function ColourLegend({ projects, visibleProjectIds, toggleProjectVisibility }: ColourLegendProps) {
-  const visibleSet = useMemo(() => new Set(visibleProjectIds), [visibleProjectIds])
-  const allVisible = visibleProjectIds.length === projects.length
+function ColourLegend({ projects, filters, toggleProjectVisibility }: ColourLegendProps) {
+  const visibleSet = useMemo(() => new Set(getVisibleProjectIds(filters, projects)), [filters, projects])
+  const allVisible = filters.projectFilterMode === 'all'
 
   if (projects.length === 0) {
     return null

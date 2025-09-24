@@ -1,17 +1,24 @@
 import { compareAsc, isWithinInterval, parseISO } from 'date-fns'
 
 import { resolvePlannerIconMeta } from '@/lib/icons'
+import { SYS } from '@/services/systemProjects'
 import type { PlannerItem, Project } from '@/types'
 import type { Filters } from './plannerStore'
 
 export function getFilteredItems(items: PlannerItem[], filters: Filters, projects: Project[]) {
   const projectMap = new Map(projects.map((project) => [project.id, project]))
   const projectFilterEnabled = filters.projectFilterMode === 'include'
+  const archivedId = SYS.archivedId
+  // In include mode, show ONLY the explicitly selected projects. Empty set means show none.
   const allowedProjects = projectFilterEnabled ? new Set(filters.projectIds) : null
 
   return items
     .filter((item) => {
       if (projectFilterEnabled && allowedProjects && !allowedProjects.has(item.projectId)) {
+        return false
+      }
+      // In 'all' mode, hide archived by default
+      if (!projectFilterEnabled && item.projectId === archivedId) {
         return false
       }
 

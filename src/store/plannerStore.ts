@@ -3,7 +3,8 @@ import { createJSONStorage, devtools, persist } from 'zustand/middleware'
 import { del, get, set as idbSet } from 'idb-keyval'
 import { nanoid } from 'nanoid'
 import { firebaseEnabled, auth } from '@/services/firebase'
-import { upsertItem as remoteUpsertItem, deleteItem as remoteDeleteItem, moveProjectToArchived } from '@/services/db'
+import { SYS } from '@/services/systemProjects'
+import { upsertProject as remoteUpsertProject, upsertItem as remoteUpsertItem, deleteItem as remoteDeleteItem, moveProjectToArchived } from '@/services/db'
 
 import type { DateRangePreset, PlannerItem, PlannerView, Project } from '@/types'
 import { deriveColour } from '@/lib/colour'
@@ -44,12 +45,12 @@ type PlannerStore = {
   clearProjectSelection: () => void
   addProject: (input: { name: string; colour: string }) => string
   updateProject: (id: string, input: { name: string; colour: string }) => void
-  deleteProject: (id: string, options?: { reassignTo?: string }) => void
+  deleteProject: (id: string) => void
   upsertItem: (input: Omit<PlannerItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => string
   deleteItem: (id: string) => void
   restoreLastDeleted: () => void
-  replaceProjects?: (projects: Project[]) => void
-  replaceItems?: (items: PlannerItem[]) => void
+  replaceProjects: (projects: Project[]) => void
+  replaceItems: (items: PlannerItem[]) => void
 }
 
 const storage = {
@@ -97,7 +98,7 @@ const initialRange = () => {
 }
 
 const initialFilters = (): Filters => ({
-  projectFilterMode: 'include',
+  projectFilterMode: 'all',
   projectIds: [],
   search: '',
   range: initialRange(),
@@ -106,9 +107,9 @@ const initialFilters = (): Filters => ({
 function createDefaultProject(): Project {
   const now = new Date().toISOString()
   return {
-    id: nanoid(),
+    id: SYS.archivedId,
     name: 'Archived',
-    colour: '#1C7ED6',
+    colour: '#6B7280',
     createdAt: now,
     updatedAt: now,
   }
@@ -118,6 +119,11 @@ type PersistedStateV1 = {
   items?: unknown
   projects?: Project[]
   colourOverrides?: Record<string, string>
+}
+
+type PersistedStateV2 = {
+  items: PlannerItem[]
+  projects: Project[]
 }
 
 type LegacyItem = {
@@ -143,13 +149,82 @@ function sanitizeProjectIds(ids: string[], projects: Project[]) {
   return ids.filter((id) => allowed.has(id))
 }
 
+function normaliseArchivedState(state: PersistedStateV2): PersistedStateV2 {
+  const archivedId = SYS.archivedId
+  const nowIso = new Date().toISOString()
+  const rawItems = state.items ?? []
+  const rawProjects = state.projects ?? []
+
+  const legacyArchivedCandidates = rawProjects.filter(
+    (project) => project.id !== archivedId && project.name.trim().toLowerCase() === 'archived',
+  )
+  const legacyArchivedIds = new Set(legacyArchivedCandidates.map((project) => project.id))
+
+  const archivedWithTargetId = rawProjects.find((project) => project.id === archivedId)
+  const archivedSource = archivedWithTargetId ?? legacyArchivedCandidates[0]
+
+  const archivedProject: Project = archivedSource
+
+    ? {
+        ...archivedSource,
+        id: archivedId,
+        name: archivedSource.name?.trim() || 'Archived',
+        colour: archivedSource.colour || '#6B7280',
+        createdAt: archivedSource.createdAt ?? nowIso,
+        updatedAt: archivedSource.updatedAt ?? archivedSource.createdAt ?? nowIso,
+      }
+    : createDefaultProject()
+
+  const normalisedItems = rawItems.map((item) => {
+    if (item.projectId === archivedId) {
+      return item
+    }
+    if (legacyArchivedIds.has(item.projectId)) {
+      return {
+        ...item,
+        projectId: archivedId,
+        updatedAt: nowIso,
+      }
+    }
+    return item
+  })
+
+  const otherProjects = rawProjects.filter(
+    (project) => project.id !== archivedId && !legacyArchivedIds.has(project.id),
+  )
+
+  const dedupedOthers: Project[] = []
+  const seen = new Set<string>()
+  for (const project of otherProjects) {
+    if (seen.has(project.id)) continue
+    seen.add(project.id)
+    dedupedOthers.push(project)
+  }
+
+  return {
+    items: normalisedItems,
+    projects: [...dedupedOthers, archivedProject],
+  }
+}
+
 function ensureFiltersConsistency(filters: Filters, projects: Project[]): Filters {
   const cleanIds = sanitizeProjectIds(filters.projectIds, projects)
+  const uniqueIds = Array.from(new Set(cleanIds))
+  const archivedId = SYS.archivedId
+  const nonArchivedIds = projects
+    .filter((project) => project.id !== archivedId)
+    .map((project) => project.id)
+  const totalNonArchived = nonArchivedIds.length
+
   if (filters.projectFilterMode === 'include') {
-    if (cleanIds.length === projects.length) {
+    const includesArchived = uniqueIds.includes(archivedId)
+    const selectedNonArchived = uniqueIds.filter((id) => id !== archivedId).length
+
+    if (!includesArchived && selectedNonArchived === totalNonArchived) {
       return { ...filters, projectFilterMode: 'all', projectIds: [] }
     }
-    return { ...filters, projectIds: cleanIds }
+
+    return { ...filters, projectIds: uniqueIds }
   }
 
   return {
@@ -196,9 +271,14 @@ export const usePlannerStore = create<PlannerStore>()(
             if (!exists) return state
 
             if (state.filters.projectFilterMode === 'all') {
-              // Treat chips as toggles: when all are visible, clicking one hides it
-              const allIds = state.projects.map((p) => p.id)
-              const nextIds = allIds.filter((id) => id !== projectId)
+              // When in 'all' (meaning all non-archived are visible), switching to include mode:
+              // - If clicking a non-archived project → remove it from the selection
+              // - If clicking Archived → add it to the selection (alongside all non-archived)
+              const archivedId = SYS.archivedId
+              const nonArchivedIds = state.projects.map((p) => p.id).filter((id) => id !== archivedId)
+              const nextIds = projectId === archivedId
+                ? [...nonArchivedIds, archivedId]
+                : nonArchivedIds.filter((id) => id !== projectId)
               return {
                 filters: {
                   ...state.filters,
@@ -216,17 +296,12 @@ export const usePlannerStore = create<PlannerStore>()(
             }
 
             const nextIds = Array.from(ids)
-            if (nextIds.length === 0) {
-              return {
-                filters: {
-                  ...state.filters,
-                  projectFilterMode: 'include',
-                  projectIds: [],
-                },
-              }
-            }
+            const archivedId = SYS.archivedId
+            const totalNonArchived = state.projects.filter((project) => project.id !== archivedId).length
+            const selectedNonArchived = nextIds.filter((id) => id !== archivedId).length
+            const includesArchived = nextIds.includes(archivedId)
 
-            if (nextIds.length === state.projects.length) {
+            if (!includesArchived && selectedNonArchived === totalNonArchived) {
               return {
                 filters: {
                   ...state.filters,
@@ -290,7 +365,11 @@ export const usePlannerStore = create<PlannerStore>()(
               filters,
             }
           })
-
+          if (firebaseEnabled && auth.currentUser?.uid) {
+            const uid = auth.currentUser.uid
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
+            remoteUpsertProject(uid, project).catch((err) => console.error('[firestore] upsertProject', err))
+          }
           return project.id
         },
         updateProject: (id, { name, colour }) =>
@@ -310,35 +389,37 @@ export const usePlannerStore = create<PlannerStore>()(
             })
 
             const filters = ensureFiltersConsistency(state.filters, projects)
-            return {
+            const next = {
               projects,
               filters,
             }
+            if (firebaseEnabled && auth.currentUser?.uid) {
+              const updated = projects.find((p) => p.id === id)
+              if (updated) {
+                const uid = auth.currentUser.uid
+                // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                remoteUpsertProject(uid, updated).catch((err) => console.error('[firestore] updateProject', err))
+              }
+            }
+            return next
           }),
-        deleteProject: (id, options) =>
+        deleteProject: (id) =>
           set((state) => {
             if (!state.projects.some((project) => project.id === id)) {
               return state
             }
 
-            if (state.projects.length <= 1) {
+            const archivedId = SYS.archivedId
+            if (id === archivedId) {
               return state
-            }
-
-            const reassignment = options?.reassignTo
-            if (state.items.some((item) => item.projectId === id)) {
-              if (!reassignment) {
-                return state
-              }
             }
 
             const projects = state.projects.filter((project) => project.id !== id)
             const items = state.items.map((item) => {
               if (item.projectId !== id) return item
-              if (!reassignment) return item
               return {
                 ...item,
-                projectId: reassignment,
+                projectId: archivedId,
                 updatedAt: new Date().toISOString(),
               }
             })
@@ -351,10 +432,10 @@ export const usePlannerStore = create<PlannerStore>()(
               filters,
             }
             // Firestore persist move to archived if enabled
-            if (firebaseEnabled && reassignment && auth.currentUser?.uid) {
+            if (firebaseEnabled && auth.currentUser?.uid) {
               const uid = auth.currentUser.uid
               // eslint-disable-next-line @typescript-eslint/no-floating-promises
-              moveProjectToArchived(uid, id, reassignment).catch((err) => {
+              moveProjectToArchived(uid, id, archivedId).catch((err) => {
                 console.error('[firestore] moveProjectToArchived', err)
               })
             }
@@ -446,6 +527,20 @@ export const usePlannerStore = create<PlannerStore>()(
           const restored = { ...undo.item, updatedAt: new Date().toISOString() }
           set((state) => ({ items: [...state.items, restored], undo: null }))
         },
+        replaceProjects: (projects) =>
+          set((state) => {
+            const hasArchived = projects.some((project) => project.id === SYS.archivedId)
+            const nextProjects = hasArchived ? projects : [...projects, createDefaultProject()]
+            return {
+              projects: nextProjects,
+              filters: ensureFiltersConsistency(state.filters, nextProjects),
+            }
+          }),
+        replaceItems: (items) =>
+          set({
+            items,
+            undo: null,
+          }),
       }),
       {
         name: 'planner-store',
@@ -454,7 +549,7 @@ export const usePlannerStore = create<PlannerStore>()(
           items: state.items,
           projects: state.projects,
         }),
-        version: 1,
+        version: 2,
         migrate: (persistedState: unknown, version) => {
           const legacyState = persistedState as PersistedStateV1 | undefined
           if (!legacyState) return legacyState
@@ -520,13 +615,23 @@ export const usePlannerStore = create<PlannerStore>()(
               projectsMap.set(project.name.toLowerCase(), project)
             }
 
-            return {
+            return normaliseArchivedState({
               items,
               projects: Array.from(projectsMap.values()),
-            }
+            })
           }
 
-          return legacyState
+          if (version < 2) {
+            const items = Array.isArray(legacyState.items)
+              ? (legacyState.items as PlannerItem[])
+              : []
+            const projects = Array.isArray(legacyState.projects) ? legacyState.projects : []
+            return normaliseArchivedState({ items, projects })
+          }
+
+          const items = Array.isArray(legacyState.items) ? (legacyState.items as PlannerItem[]) : []
+          const projects = Array.isArray(legacyState.projects) ? legacyState.projects : []
+          return normaliseArchivedState({ items, projects })
         },
       },
     ),
@@ -537,5 +642,6 @@ export function getVisibleProjectIds(filters: Filters, projects: Project[]) {
   if (filters.projectFilterMode === 'include') {
     return filters.projectIds
   }
-  return projects.map((project) => project.id)
+  const archivedId = SYS.archivedId
+  return projects.map((project) => project.id).filter((id) => id !== archivedId)
 }

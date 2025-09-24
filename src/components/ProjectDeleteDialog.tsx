@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { Project } from '@/types'
+import { SYS } from '@/services/systemProjects'
 
 export type ProjectDeleteDialogProps = {
   open: boolean
@@ -17,7 +18,7 @@ export type ProjectDeleteDialogProps = {
   projects: Project[]
   itemCount: number
   onCancel: () => void
-  onConfirm: (reassignTo?: string) => void
+  onConfirm: () => void
 }
 
 export function ProjectDeleteDialog({
@@ -28,19 +29,14 @@ export function ProjectDeleteDialog({
   onCancel,
   onConfirm,
 }: ProjectDeleteDialogProps) {
-  const archivedProject = useMemo(
-    () => projects.find((candidate) => candidate.name.trim().toLowerCase() === 'archived'),
-    [projects],
-  )
+  const archivedProject = useMemo(() => projects.find((candidate) => candidate.id === SYS.archivedId), [projects])
 
-  const requiresReassign = itemCount > 0
-  const isArchivedTarget = project?.name.trim().toLowerCase() === 'archived'
-  const canDeleteWithoutReassign = !requiresReassign
+  const isArchivedTarget = project?.id === SYS.archivedId
 
   const disableDelete =
     project == null ||
     isArchivedTarget ||
-    (requiresReassign && (!archivedProject || archivedProject.id === project.id))
+    !archivedProject
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -50,11 +46,6 @@ export function ProjectDeleteDialog({
 
   const handleConfirm = () => {
     if (!project || disableDelete) return
-    if (requiresReassign) {
-      if (!archivedProject || archivedProject.id === project.id) return
-      onConfirm(archivedProject.id)
-      return
-    }
     onConfirm()
   }
 
@@ -65,10 +56,10 @@ export function ProjectDeleteDialog({
     if (isArchivedTarget) {
       return 'The Archived project keeps a record of old work and cannot be removed.'
     }
-    if (requiresReassign && (!archivedProject || archivedProject.id === project.id)) {
+    if (!archivedProject) {
       return 'Add an Archived project before deleting so existing items have somewhere to move.'
     }
-    if (canDeleteWithoutReassign) {
+    if (itemCount === 0) {
       return 'This will move the project to Archived. This action cannot be undone.'
     }
     if (itemCount === 1) {
@@ -87,7 +78,7 @@ export function ProjectDeleteDialog({
           )}
         </DialogHeader>
 
-        {requiresReassign && project && !isArchivedTarget && archivedProject && archivedProject.id !== project.id && (
+        {itemCount > 0 && project && !isArchivedTarget && archivedProject && archivedProject.id !== project.id && (
           <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
             All {itemCount} item{itemCount === 1 ? '' : 's'} will be moved to "{archivedProject.name}".
           </div>

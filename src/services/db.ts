@@ -16,6 +16,7 @@ import {
 
 import type { PlannerItem, Project } from '@/types'
 import { db } from '@/services/firebase'
+import { SYS } from '@/services/systemProjects'
 
 export function initPersistence() {
   // Best-effort offline cache; ignore multi-tab/unsupported errors
@@ -39,14 +40,14 @@ export async function ensureSystemProjects(uid: string) {
     await setDoc(ref, {
       id,
       name,
-      color: name.toLowerCase() === 'archived' ? '#6B7280' : '#1C7ED6',
+      color: '#6B7280',
       system: true,
-      kind: name.toLowerCase() === 'archived' ? 'archived' : 'default',
+      kind: 'archived',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
   }
-  await Promise.all([ensure('sys-general', 'General'), ensure('sys-archived', 'Archived')])
+  await ensure(SYS.archivedId, 'Archived')
 }
 
 export async function upsertProject(uid: string, project: Project) {
@@ -110,5 +111,3 @@ export async function moveProjectToArchived(uid: string, projectId: string, arch
   }
   await deleteDoc(doc(projectsCol, projectId))
 }
-
-

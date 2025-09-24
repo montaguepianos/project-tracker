@@ -70,18 +70,23 @@ export default function App() {
     if (view !== 'year') return
 
     const refDate = parseISO(referenceDate)
-    const start = startOfYear(refDate)
-    const startIso = formatISODate(start)
+    const focusDate = parseISO(focusedDate)
 
-    if (referenceDate !== startIso) {
-      setReferenceDate(startIso)
-      return
+    if (refDate.getFullYear() !== focusDate.getFullYear()) {
+      setFocusedDate(formatISODate(refDate))
     }
+  }, [focusedDate, referenceDate, setFocusedDate, view])
 
-    if (!focusedDate.startsWith(startIso.slice(0, 4))) {
-      setFocusedDate(startIso)
+  useEffect(() => {
+    if (view !== 'week') return
+
+    const focusDate = parseISO(focusedDate)
+    const focusIso = formatISODate(focusDate)
+
+    if (referenceDate !== focusIso) {
+      setReferenceDate(focusIso)
     }
-  }, [focusedDate, referenceDate, setFocusedDate, setReferenceDate, view])
+  }, [focusedDate, referenceDate, setReferenceDate, view])
 
   const moveFocus = useCallback(
     (delta: number) => {

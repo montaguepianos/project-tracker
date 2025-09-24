@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { SYS } from '@/services/systemProjects'
 
 export type EditDrawerProps = {
   open: boolean
@@ -60,6 +61,12 @@ const EMPTY_DRAFT: Draft = {
 export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   const items = usePlannerStore((state) => state.items)
   const projects = usePlannerStore((state) => state.projects)
+  const uiProjects = useMemo(() => {
+    const archivedId = SYS.archivedId
+    const archived = projects.find((project) => project.id === archivedId)
+    const others = projects.filter((project) => project.id !== archivedId)
+    return archived ? [...others, archived] : others
+  }, [projects])
   const addProject = usePlannerStore((state) => state.addProject)
   const upsertItem = usePlannerStore((state) => state.upsertItem)
   const deleteItem = usePlannerStore((state) => state.deleteItem)
@@ -120,7 +127,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
       return
     }
 
-    const defaultProject = projects[0]?.id ?? null
+    const defaultProject = uiProjects[0]?.id ?? null
     const initialDate = date ?? formatISODate(new Date())
     setDraft({
       projectId: defaultProject,
@@ -320,12 +327,14 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
   return (
     <>
       <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
-        <SheetContent>
+        <SheetContent className="grid h-full grid-rows-[auto_1fr_auto]">
         <SheetHeader>
           <SheetTitle>{currentItem ? 'Edit item' : 'Add item'}</SheetTitle>
         </SheetHeader>
+        <div className="mt-6 overflow-auto pr-1">
         <form
-          className="mt-6 space-y-4"
+          id="edit-item-form"
+          className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
             handleSubmit()
@@ -338,7 +347,7 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
                 <SelectValue placeholder="Select a project" />
               </SelectTrigger>
               <SelectContent>
-                {projects.map((project) => (
+                {uiProjects.map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     {project.name}
                   </SelectItem>
@@ -527,24 +536,26 @@ export function EditDrawer({ open, itemId, date, onClose }: EditDrawerProps) {
               </div>
             </div>
           </div>
-          <SheetFooter className="pt-4">
-            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-between">
-              {currentItem ? (
-                <Button variant="destructive" type="button" onClick={handleDelete}>
-                  Delete
-                </Button>
-              ) : (
-                <span className="text-xs text-muted-foreground">Projects manage their own colours.</span>
-              )}
-              <div className="flex gap-2">
-                <Button variant="outline" type="button" onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button type="submit">Save</Button>
-              </div>
-            </div>
-          </SheetFooter>
         </form>
+        </div>
+        <SheetFooter className="sticky bottom-0 border-t bg-background/95 pt-4">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-between">
+            {currentItem ? (
+              <Button variant="destructive" type="button" onClick={handleDelete}>
+                Delete
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground">Projects manage their own colours.</span>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" type="button" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" form="edit-item-form">Save</Button>
+            </div>
+          </div>
+        </SheetFooter>
+        
         </SheetContent>
       </Sheet>
       <CustomIconDialog

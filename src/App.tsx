@@ -12,6 +12,7 @@ import { WeekView } from '@/views/WeekView'
 import { DayView } from '@/views/DayView'
 import { ItemDetailsModal } from '@/components/ItemDetailsModal'
 import { ItemDeleteDialog } from '@/components/ItemDeleteDialog'
+import { PlannerAssistant } from '@/components/PlannerAssistant'
 import { formatISODate } from '@/lib/string'
 import { clampToPlannerRange, getMonthRangeFor, getYearRangeFor, MIN_PLANNER_DATE, MAX_PLANNER_DATE } from '@/lib/date'
 import { useAllowedUser } from '@/hooks/useAllowedUser'
@@ -330,12 +331,13 @@ export default function App() {
   }
 
   return (
-    <AppShell
-      onAddItem={handleAdd}
-      onStepHeading={headingStepHandler}
-      canStepPrev={headingCanPrev}
-      canStepNext={headingCanNext}
-    >
+    <>
+      <AppShell
+        onAddItem={handleAdd}
+        onStepHeading={headingStepHandler}
+        canStepPrev={headingCanPrev}
+        canStepNext={headingCanNext}
+      >
       {view === 'year' && (
         <YearView
           selectedItemId={selectedItemId}
@@ -438,6 +440,8 @@ export default function App() {
         onCancel={handleCancelDeleteItem}
         onConfirm={handleConfirmDeleteItem}
       />
-    </AppShell>
+      </AppShell>
+      <PlannerAssistant />
+    </>
   )
 }

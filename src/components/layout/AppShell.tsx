@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 import { useCallback, useMemo, useRef } from 'react'
-import { ChevronLeft, ChevronRight, Eye, FileDown, LayoutGrid, LogOut, Printer, Rows3 } from 'lucide-react'
+import { BotMessageSquare, ChevronLeft, ChevronRight, Eye, FileDown, LayoutGrid, LogOut, Printer, Rows3 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/useAuth'
 import { FiltersBar } from '@/components/FiltersBar'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { usePlannerStore, getVisibleProjectIds } from '@/store/plannerStore'
+import { useAssistantStore } from '@/store/assistantStore'
 import type { PlannerView, Project } from '@/types'
 import { formatDate, MONTH_LABEL_FORMAT } from '@/lib/date'
 import { formatISODate } from '@/lib/string'
@@ -45,6 +46,7 @@ export function AppShell({ children, onAddItem, onStepHeading, canStepNext = tru
   const projects = usePlannerStore((state) => state.projects)
 
   const contentRef = useRef<HTMLDivElement>(null)
+  const openAssistant = useAssistantStore((state) => state.openPanel)
 
   const visibleProjectIds = useMemo(() => getVisibleProjectIds(filters, projects), [filters, projects])
   const legendProjects = useMemo(() => {
@@ -144,6 +146,10 @@ export function AppShell({ children, onAddItem, onStepHeading, canStepNext = tru
                 <Button variant="outline" className="gap-2" onClick={handleDownloadPdf}>
                   <FileDown className="h-4 w-4" />
                   PDF
+                </Button>
+                <Button variant="outline" className="gap-2" onClick={openAssistant}>
+                  <BotMessageSquare className="h-4 w-4" />
+                  Assistant
                 </Button>
                 <Button onClick={onAddItem}>Add item</Button>
                 <ThemeToggle />

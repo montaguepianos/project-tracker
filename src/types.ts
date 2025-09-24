@@ -30,3 +30,12 @@ export type DateRangePreset =
   | 'this-month'
   | 'next-month'
   | 'custom'
+
+export type AssistantRole = 'user' | 'assistant'
+
+export type AssistantMessage = {
+  id: string
+  role: AssistantRole
+  content: string
+  createdAt: string
+}
